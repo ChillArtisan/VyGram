@@ -99,6 +99,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
+#include "ayu/ui/boxes/send_templates_box.h"
 
 
 namespace InlineBots {
@@ -2999,6 +3000,11 @@ std::unique_ptr<Ui::DropdownMenu> MakeAttachBotsMenu(
 		st::dropdownMenuWithIcons);
 	const auto bots = &peer->session().attachWebView();
 	const auto raw = result.get();
+	if (!actionFactory().options.scheduled) {
+		raw->addAction(tr::lng_send_templates_title(tr::now), [=] {
+			Ayu::ShowSendTemplates(controller, raw, actionFactory);
+		}, &st::menuIconFile);
+	}
 	auto minimal = 0;
 	if (Data::CanSend(peer, ChatRestriction::SendPhotos, false)) {
 		++minimal;

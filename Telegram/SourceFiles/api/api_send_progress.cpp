@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_send_progress.h"
 
 #include "main/main_session.h"
+#include "mtproto/mtproto_response.h"
 #include "history/history.h"
 #include "data/data_peer.h"
 #include "data/data_user.h"
@@ -26,6 +27,30 @@ constexpr auto kCancelTypingActionTimeout = crl::time(5000);
 constexpr auto kSendMySpeakingInterval = 3 * crl::time(1000);
 constexpr auto kSendMyTypingInterval = 5 * crl::time(1000);
 constexpr auto kSendTypingsToOfflineFor = TimeId(30);
+
+MTPsendMessageAction PreparedAction(SendProgressType type, int progress) {
+	using Type = SendProgressType;
+	return [&]() -> MTPsendMessageAction {
+		const auto p = MTP_int(progress);
+		switch (type) {
+		case Type::Typing: return MTP_sendMessageTypingAction();
+		case Type::RecordVideo: return MTP_sendMessageRecordVideoAction();
+		case Type::UploadVideo: return MTP_sendMessageUploadVideoAction(p);
+		case Type::RecordVoice: return MTP_sendMessageRecordAudioAction();
+		case Type::UploadVoice: return MTP_sendMessageUploadAudioAction(p);
+		case Type::RecordRound: return MTP_sendMessageRecordRoundAction();
+		case Type::UploadRound: return MTP_sendMessageUploadRoundAction(p);
+		case Type::UploadPhoto: return MTP_sendMessageUploadPhotoAction(p);
+		case Type::UploadFile: return MTP_sendMessageUploadDocumentAction(p);
+		case Type::ChooseLocation: return MTP_sendMessageGeoLocationAction();
+		case Type::ChooseContact: return MTP_sendMessageChooseContactAction();
+		case Type::PlayGame: return MTP_sendMessageGamePlayAction();
+		case Type::Speaking: return MTP_speakingInGroupCallAction();
+		case Type::ChooseSticker: return MTP_sendMessageChooseStickerAction();
+		default: return MTP_sendMessageTypingAction();
+		}
+	}();
+}
 
 } // namespace
 
@@ -68,6 +93,9 @@ void SendProgressManager::update(
 		MsgId topMsgId,
 		SendProgressType type,
 		int progress) {
+	if (progress >= 0) {
+		_ordinaryActivity.fire({ history, topMsgId });
+	}
 	const auto peer = history->peer;
 	if (peer->isSelf()
 		|| (peer->isChannel()
@@ -84,6 +112,67 @@ void SendProgressManager::update(
 			send(key, progress);
 		}
 	}
+}
+
+bool SendProgressManager::canSendPrepared(not_null<History*> history) const {
+	const auto peer = history->peer;
+	return AyuSettings::ghost(_session).sendUploadProgress()
+		&& !peer->isSelf()
+		&& (!peer->isChannel() || peer->isMegagroup())
+		&& !skipRequest({ history, 0, SendProgressType::Typing });
+}
+
+mtpRequestId SendProgressManager::updatePrepared(
+		not_null<History*> history,
+		MsgId topMsgId,
+		SendProgressType type,
+		Fn<void(bool, bool)> done) {
+	Expects(type == SendProgressType::RecordRound
+		|| type == SendProgressType::RecordVoice
+		|| type == SendProgressType::RecordVideo
+		|| type == SendProgressType::UploadPhoto);
+
+	return _session->api().request(MTPmessages_SetTyping(
+		MTP_flags(topMsgId
+			? MTPmessages_SetTyping::Flag::f_top_msg_id
+			: MTPmessages_SetTyping::Flag(0)),
+		history->peer->input(),
+		MTP_int(topMsgId),
+		PreparedAction(type, 0)
+	)).done([=](const MTPBool &result) {
+		done(mtpIsTrue(result), true);
+	}).fail([=](const MTP::Error &error) {
+		done(false, !MTP::IgnoreError(error));
+	}).handleAllErrors().send();
+}
+
+void SendProgressManager::cancelPrepared(
+		not_null<History*> history,
+		MsgId topMsgId,
+		mtpRequestId requestId) {
+	if (requestId) {
+		_session->api().request(requestId).cancel();
+	}
+	for (auto i = _updated.begin(); i != _updated.end();) {
+		if (i->first.history == history && i->first.topMsgId == topMsgId) {
+			i = _updated.erase(i);
+		} else {
+			++i;
+		}
+	}
+	_session->api().request(MTPmessages_SetTyping(
+		MTP_flags(topMsgId
+			? MTPmessages_SetTyping::Flag::f_top_msg_id
+			: MTPmessages_SetTyping::Flag(0)),
+		history->peer->input(),
+		MTP_int(topMsgId),
+		MTP_sendMessageCancelAction()
+	)).send();
+}
+
+auto SendProgressManager::ordinaryActivity() const
+-> rpl::producer<std::pair<not_null<History*>, MsgId>> {
+	return _ordinaryActivity.events();
 }
 
 bool SendProgressManager::updated(const Key &key, bool doing) {
@@ -126,26 +215,7 @@ void SendProgressManager::send(const Key &key, int progress) {
 	}
 
 	using Type = SendProgressType;
-	const auto action = [&]() -> MTPsendMessageAction {
-		const auto p = MTP_int(progress);
-		switch (key.type) {
-		case Type::Typing: return MTP_sendMessageTypingAction();
-		case Type::RecordVideo: return MTP_sendMessageRecordVideoAction();
-		case Type::UploadVideo: return MTP_sendMessageUploadVideoAction(p);
-		case Type::RecordVoice: return MTP_sendMessageRecordAudioAction();
-		case Type::UploadVoice: return MTP_sendMessageUploadAudioAction(p);
-		case Type::RecordRound: return MTP_sendMessageRecordRoundAction();
-		case Type::UploadRound: return MTP_sendMessageUploadRoundAction(p);
-		case Type::UploadPhoto: return MTP_sendMessageUploadPhotoAction(p);
-		case Type::UploadFile: return MTP_sendMessageUploadDocumentAction(p);
-		case Type::ChooseLocation: return MTP_sendMessageGeoLocationAction();
-		case Type::ChooseContact: return MTP_sendMessageChooseContactAction();
-		case Type::PlayGame: return MTP_sendMessageGamePlayAction();
-		case Type::Speaking: return MTP_speakingInGroupCallAction();
-		case Type::ChooseSticker: return MTP_sendMessageChooseStickerAction();
-		default: return MTP_sendMessageTypingAction();
-		}
-	}();
+	const auto action = PreparedAction(key.type, progress);
 	const auto requestId = _session->api().request(MTPmessages_SetTyping(
 		MTP_flags(key.topMsgId
 			? MTPmessages_SetTyping::Flag::f_top_msg_id

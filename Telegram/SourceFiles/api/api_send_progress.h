@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "api/api_common.h"
 #include "base/timer.h"
+#include "rpl/event_stream.h"
 
 class History;
 
@@ -72,6 +73,19 @@ public:
 		SendProgressType type);
 	void cancelTyping(not_null<History*> history);
 
+	[[nodiscard]] bool canSendPrepared(not_null<History*> history) const;
+	[[nodiscard]] mtpRequestId updatePrepared(
+		not_null<History*> history,
+		MsgId topMsgId,
+		SendProgressType type,
+		Fn<void(bool, bool)> done);
+	void cancelPrepared(
+		not_null<History*> history,
+		MsgId topMsgId,
+		mtpRequestId requestId);
+	[[nodiscard]] auto ordinaryActivity() const
+		-> rpl::producer<std::pair<not_null<History*>, MsgId>>;
+
 private:
 	struct Key {
 		not_null<History*> history;
@@ -97,6 +111,7 @@ private:
 	const not_null<Main::Session*> _session;
 	base::flat_map<Key, mtpRequestId> _requests;
 	base::flat_map<Key, crl::time> _updated;
+	rpl::event_stream<std::pair<not_null<History*>, MsgId>> _ordinaryActivity;
 	base::Timer _stopTypingTimer;
 	History *_stopTypingHistory = nullptr;
 

@@ -9,6 +9,7 @@
 #include "ayu/data/entities.h"
 
 #include <functional>
+#include <optional>
 #include <QByteArray>
 
 class SchemaVersion
@@ -27,6 +28,8 @@ void shutdown();
 
 [[nodiscard]] bool storePrivateSetting(const std::string &name, const QByteArray &value);
 [[nodiscard]] QByteArray loadPrivateSetting(const std::string &name);
+[[nodiscard]] std::optional<QByteArray> tryLoadPrivateSetting(
+	const std::string &name);
 
 [[nodiscard]] bool storeMedia(ID userId, ID mediaId, int mediaType, const QByteArray &bytes);
 [[nodiscard]] QByteArray loadMedia(ID userId, ID mediaId, int mediaType);

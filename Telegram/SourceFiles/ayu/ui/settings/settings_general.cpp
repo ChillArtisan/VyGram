@@ -8,6 +8,7 @@
 
 #include "lang_auto.h"
 #include "ayu/ayu_settings.h"
+#include "ayu/ui/boxes/send_templates_box.h"
 #include "ayu/ui/settings/ayu_builder.h"
 #include "ayu/ui/settings/settings_ayu_utils.h"
 #include "ayu/ui/settings/settings_main.h"
@@ -311,6 +312,13 @@ const auto kMeta = BuildHelper({
 	auto ayu = AyuSectionBuilder(builder);
 
 	builder.addSkip();
+	const auto controller = builder.controller();
+	builder.addButton({
+		.id = u"ayu/sendTemplates"_q,
+		.title = tr::lng_send_templates_title(),
+		.st = &st::settingsButtonNoIcon,
+		.onClick = [=] { Ayu::ShowSendTemplates(controller); },
+	});
 	BuildQoLToggles(builder, ayu);
 	builder.addSkip();
 });

@@ -382,13 +382,17 @@ bool storePrivateSetting(const std::string &name, const QByteArray &value) {
 }
 
 QByteArray loadPrivateSetting(const std::string &name) {
+	return tryLoadPrivateSetting(name).value_or(QByteArray());
+}
+
+std::optional<QByteArray> tryLoadPrivateSetting(const std::string &name) {
 	std::lock_guard lock(databaseMutex);
 	try {
 		const auto row = openedStorage().get_pointer<PrivateSetting>(name);
 		return row ? QByteArray(row->value.data(), row->value.size()) : QByteArray();
 	} catch (...) {
 		LOG(("Failed to load encrypted private setting."));
-		return {};
+		return std::nullopt;
 	}
 }
 

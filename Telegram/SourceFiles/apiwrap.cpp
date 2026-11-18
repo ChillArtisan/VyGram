@@ -4252,10 +4252,10 @@ void ApiWrap::sendVoiceMessage(
 		VoiceWaveform waveform,
 		crl::time duration,
 		bool video,
-		const SendAction &action) {
+		const SendAction &action,
+		const TextWithTags &caption) {
 	auto scheduledAction = action;
 	applyGhostScheduling(scheduledAction, QString(), 17);
-	const auto caption = TextWithTags();
 	const auto to = FileLoadTaskOptions(scheduledAction);
 	_fileLoader->addTask(
 		std::make_unique<FileLoadTask>(FileLoadTask::VoiceArgs{

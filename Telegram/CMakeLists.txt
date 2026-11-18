@@ -149,6 +149,11 @@ set(ayugram_files
         ayu/ui/utils/palette.h
         ayu/ui/utils/itunes_search.cpp
         ayu/ui/utils/itunes_search.h
+        ayu/features/send_templates/send_templates.cpp
+        ayu/features/send_templates/send_templates.h
+        ayu/features/send_templates/send_templates_mp4.h
+        ayu/ui/boxes/send_templates_box.cpp
+        ayu/ui/boxes/send_templates_box.h
         ayu/ui/settings/ayu_builder.cpp
         ayu/ui/settings/ayu_builder.h
         ayu/ui/settings/settings_appearance.cpp
