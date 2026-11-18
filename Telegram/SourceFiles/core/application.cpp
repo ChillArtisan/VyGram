@@ -110,6 +110,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_infra.h"
+#include "ayu/data/ayu_database.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/features/streamer_mode/streamer_mode.h"
 
@@ -287,6 +288,7 @@ Application::~Application() {
 
 	_private->proxyRotation = nullptr;
 	_domain->finish();
+	AyuDatabase::shutdown();
 	MTP::WebProxy::Transport::Shutdown();
 
 	Local::finish();
@@ -314,6 +316,7 @@ void Application::run() {
 	// Depends on notifications settings.
 	_notifications = std::make_unique<Window::Notifications::System>();
 
+	Window::Theme::PrepareFreshProfile();
 	startLocalStorage();
 
 	style::SetCustomFont(settings().customFontFamily());
@@ -548,11 +551,12 @@ void Application::showOpenGLCrashNotification() {
 
 void Application::startDomain() {
 	const auto state = _domain->start(QByteArray());
-	if (state != Storage::StartResult::IncorrectPasscodeLegacy) {
-		// In case of non-legacy passcoded app all global settings are ready.
+	if (state == Storage::StartResult::Success) {
+		// Protected global settings are loaded only after password entry.
 		startSettingsAndBackground();
 	}
-	if (state != Storage::StartResult::Success) {
+	if (state != Storage::StartResult::Success
+		|| !_domain->local().hasLocalPasscode()) {
 		lockByPasscode();
 		DEBUG_LOG(("Application Info: passcode needed..."));
 	}
@@ -561,6 +565,7 @@ void Application::startDomain() {
 void Application::startSettingsAndBackground() {
 	Local::rewriteSettingsIfNeeded();
 	Window::Theme::Background()->start();
+	Window::Theme::CommitFreshProfileTheme();
 	checkSystemDarkMode();
 	Ui::SetScreenReaderModeDisabled(
 		settings().readPref<bool>(kScreenReaderModeDisabledKey));
@@ -1344,6 +1349,13 @@ void Application::maybeLockByPasscode() {
 }
 
 void Application::unlockPasscode() {
+	if (_domain->local().needsPasscodeSetup()
+		|| _domain->local().requiresPasscodeUpgrade()) {
+		enumerateWindows([](not_null<Window::Controller*> window) {
+			window->setupPasscodeLock();
+		});
+		return;
+	}
 	clearPasscodeLock();
 	enumerateWindows([&](not_null<Window::Controller*> w) {
 		w->clearPasscodeLock();
@@ -2054,7 +2066,7 @@ void Application::RegisterUrlScheme() {
 		.arguments = arguments,
 		.protocol = u"tg"_q,
 		.protocolName = u"Telegram Link"_q,
-		.shortAppName = u"AyuGram"_q,
+		.shortAppName = u"VyGram"_q,
 		.longAppName = QCoreApplication::applicationName(),
 		.displayAppName = AppName.utf16(),
 		.displayAppDescription = AppName.utf16(),

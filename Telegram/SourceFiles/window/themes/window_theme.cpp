@@ -44,8 +44,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QFileSystemWatcher>
+#include <QtCore/QDir>
+#include <QtCore/QFileInfo>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QStyleHints>
+
+// AyuGram includes
+#include "ayu/data/ayu_database.h"
+#include "ayu/ayu_infra.h"
+#include "ayu/ayu_settings.h"
+
 
 namespace Window {
 namespace Theme {
@@ -64,6 +72,8 @@ struct Applying {
 
 base::NeverFreedPointer<ChatBackground> GlobalBackground;
 Applying GlobalApplying;
+bool FreshProfile = false;
+std::optional<Saved> FreshProfileTheme;
 
 inline bool AreTestingTheme() {
 	return !GlobalApplying.paletteForRevert.isEmpty();
@@ -1294,6 +1304,114 @@ bool IsEmbeddedTheme(const QString &path) {
 	return path.isEmpty() || path.startsWith(u":/gui/"_q);
 }
 
+void PrepareFreshProfile() {
+	FreshProfile = false;
+	const auto legacyNames = QStringList{
+		cDataFile(), cDataFile() + u"_config"_q, u"data"_q, u"data_config"_q };
+	for (const auto &name : legacyNames) {
+		if (QFileInfo::exists(cWorkingDir() + name)) {
+			return;
+		}
+	}
+	const auto info = QFileInfo(cWorkingDir() + u"tdata"_q);
+	if (info.isSymLink()) {
+		return;
+	} else if (!info.exists()) {
+		FreshProfile = true;
+		return;
+	} else if (!info.isDir() || !info.isReadable()) {
+		return;
+	}
+	const auto directory = QDir(info.absoluteFilePath());
+	const auto entries = directory.entryInfoList(
+		QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot);
+	for (const auto &entry : entries) {
+		if (entry.fileName() == u"dumps"_q && entry.isDir() && !entry.isSymLink()
+			&& entry.isReadable() && QDir(entry.absoluteFilePath()).entryList(
+				QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot).isEmpty()) {
+			continue;
+		}
+		if (entry.fileName() != u"working"_q || !entry.isFile() || entry.isSymLink()) {
+			return;
+		}
+	}
+	FreshProfile = true;
+}
+
+void InitializeFreshProfile() {
+	const auto freshProfile = base::take(FreshProfile);
+	Saved saved;
+	saved.object.pathAbsolute = TerminalThemePath();
+	saved.object.pathRelative = TerminalThemePath();
+	Instance instance;
+	if (!LoadFromFile(TerminalThemePath(), &instance, &saved.cache, &saved.object.content)) {
+		LOG(("Theme: Could not initialize the bundled Terminal theme."));
+		return;
+	}
+	style::main_palette::apply(instance.palette);
+	if (!freshProfile) {
+		return;
+	}
+	Background()->saveAdjustableColors();
+	Background()->setThemeData(std::move(instance.background), instance.tiled);
+	Background()->setThemeObject(saved.object);
+	SetNightModeValue(true);
+	Core::App().settings().setSystemDarkModeEnabled(false);
+	FreshProfileTheme = std::move(saved);
+}
+
+void CommitFreshProfileTheme() {
+	if (!AyuDatabase::isUnlocked()) {
+		return;
+	}
+	constexpr auto key = "terminal.design.version";
+	const auto version = QByteArray("2");
+	const auto savedVersion = AyuDatabase::loadPrivateSetting(key);
+	if (savedVersion == version) {
+		FreshProfileTheme = std::nullopt;
+		return;
+	}
+	if (savedVersion == QByteArray("1") && !IsTerminalTheme()) {
+		// Refresh the bundled theme only if it is still selected.
+		// A different theme chosen after the first migration belongs to the user.
+		FreshProfileTheme = std::nullopt;
+		if (!AyuDatabase::storePrivateSetting(key, version)) {
+			LOG(("Theme: Could not persist the Terminal design version."));
+		}
+		return;
+	}
+	// Apply once to upgraded profiles too, after protected settings and the
+	// background have loaded. Later manual theme choices must be preserved.
+	Core::App().settings().setSystemDarkModeEnabled(false);
+	Core::App().settings().setSystemAccentColorEnabled(false);
+	if (IsNightMode()) {
+		if (!Apply(TerminalThemePath())) {
+			return;
+		}
+	} else {
+		ToggleNightMode(TerminalThemePath());
+	}
+	if (!IsTerminalTheme()) {
+		return;
+	}
+	KeepApplied();
+	if (savedVersion == QByteArray()) {
+		auto &settings = AyuSettings::getInstance();
+		settings.setMessageBubbleRadius(2);
+		settings.setRemoveMessageTail(true);
+		settings.setAvatarCorners(2);
+		settings.setSingleCornerRadius(true);
+		settings.setMonoFont(u"JetBrains Mono"_q);
+	}
+	AyuInfra::applyProtectedUiSettings();
+	Local::writeSettings();
+	Local::sync();
+	FreshProfileTheme = std::nullopt;
+	if (!AyuDatabase::storePrivateSetting(key, version)) {
+		LOG(("Theme: Could not persist the Terminal design version."));
+	}
+}
+
 bool Initialize(Saved &&saved) {
 	if (InitializeFromSaved(std::move(saved))) {
 		Background()->setThemeObject(saved.object);
@@ -1304,6 +1422,8 @@ bool Initialize(Saved &&saved) {
 }
 
 void Uninitialize() {
+	FreshProfile = false;
+	FreshProfileTheme = std::nullopt;
 	GlobalBackground.clear();
 	GlobalApplying = Applying();
 }
@@ -1415,6 +1535,17 @@ void Revert() {
 
 QString NightThemePath() {
 	return kNightThemeFile.utf16();
+}
+
+QString TerminalThemePath() {
+	return u":/gui/terminal.tdesktop-theme"_q;
+}
+
+bool IsTerminalTheme() {
+	const auto &object = AreTestingTheme()
+		? GlobalApplying.data.object
+		: Background()->themeObject();
+	return object.pathAbsolute == TerminalThemePath();
 }
 
 bool IsNonDefaultBackground() {

@@ -63,6 +63,9 @@ struct Saved {
 	Cached cache;
 };
 bool Initialize(Saved &&saved);
+void PrepareFreshProfile();
+void InitializeFreshProfile();
+void CommitFreshProfileTheme();
 void Uninitialize();
 
 struct Instance {
@@ -93,6 +96,8 @@ void KeepFromEditor(
 	const ParsedTheme &themeParsed,
 	const QImage &background);
 QString NightThemePath();
+[[nodiscard]] QString TerminalThemePath();
+[[nodiscard]] bool IsTerminalTheme();
 [[nodiscard]] bool IsNightMode();
 void SetNightModeValue(bool nightMode);
 [[nodiscard]] rpl::producer<bool> IsNightModeValue();

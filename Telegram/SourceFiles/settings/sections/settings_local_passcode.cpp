@@ -8,8 +8,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/sections/settings_local_passcode.h"
 
 #include "base/platform/base_platform_last_input.h"
-#include "base/platform/base_platform_info.h"
-#include "base/system_unlock.h"
 #include "boxes/auto_lock_box.h"
 #include "core/application.h"
 #include "core/core_settings.h"
@@ -23,29 +21,34 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/settings_common.h"
 #include "storage/storage_domain.h"
 #include "ui/vertical_list.h"
-#include "ui/boxes/confirm_box.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/fields/password_input.h"
 #include "ui/widgets/labels.h"
 #include "ui/wrap/vertical_layout.h"
-#include "ui/wrap/slide_wrap.h"
 #include "window/window_session_controller.h"
 #include "styles/style_boxes.h"
 #include "styles/style_layers.h"
 #include "styles/style_menu_icons.h"
 #include "styles/style_settings.h"
 
+// AyuGram includes
+#include "window/window_lock_widgets.h"
+
+
 namespace Settings {
 namespace {
 
 using namespace Builder;
 
-void SetPasscode(
+bool SetPasscode(
 		not_null<Window::SessionController*> controller,
 		const QString &pass) {
 	cSetPasscodeBadTries(0);
-	controller->session().domain().local().setPasscode(pass.toUtf8());
+	if (!controller->session().domain().local().setPasscode(pass.toUtf8())) {
+		return false;
+	}
 	Core::App().localPasscodeChanged();
+	return true;
 }
 
 } // namespace
@@ -82,7 +85,6 @@ private:
 	rpl::event_stream<> _setInnerFocus;
 	rpl::event_stream<Type> _showOther;
 	rpl::event_stream<> _showBack;
-	bool _systemUnlockWithBiometric = false;
 
 };
 
@@ -98,13 +100,6 @@ rpl::producer<QString> LocalPasscodeEnter::title() {
 
 void LocalPasscodeEnter::setupContent() {
 	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
-
-	base::SystemUnlockStatus(
-		true
-	) | rpl::on_next([=](base::SystemUnlockAvailability status) {
-		_systemUnlockWithBiometric = status.available
-			&& status.withBiometrics;
-	}, lifetime());
 
 	const auto isCreate = (enterType() == EnterType::Create);
 	const auto isCheck = (enterType() == EnterType::Check);
@@ -153,10 +148,7 @@ void LocalPasscodeEnter::setupContent() {
 		)->setTryMakeSimilarLines(true);
 	};
 
-	addDescription(tr::lng_passcode_about1());
-	Ui::AddSkip(content);
-	addDescription(tr::lng_passcode_about2());
-
+	addDescription(tr::lng_terminal_password_setup_about());
 	Ui::AddSkip(content, st::settingLocalPasscodeDescriptionBottomSkip);
 
 	const auto newPasscode = CloudPassword::AddPasswordField(
@@ -194,7 +186,9 @@ void LocalPasscodeEnter::setupContent() {
 			? reenterPasscode->text()
 			: QString();
 		if (isCreate || isChange) {
-			if (newText.isEmpty()) {
+			if (!Window::IsStrongLocalPasscode(newText)) {
+				error->show();
+				error->setText(tr::lng_terminal_password_weak(tr::now));
 				newPasscode->setFocus();
 				newPasscode->showError();
 			} else if (reenterText.isEmpty()) {
@@ -218,12 +212,12 @@ void LocalPasscodeEnter::setupContent() {
 						return;
 					}
 				}
-				SetPasscode(controller(), newText);
+				if (!SetPasscode(controller(), newText)) {
+					error->show();
+					error->setText(tr::lng_terminal_archive_error(tr::now));
+					return;
+				}
 				if (isCreate) {
-					if (Platform::IsWindows() || _systemUnlockWithBiometric) {
-						Core::App().settings().setSystemUnlockEnabled(true);
-						Core::App().saveSettingsDelayed();
-					}
 					_showOther.fire(LocalPasscodeManageId());
 				} else if (isChange) {
 					_showBack.fire({});
@@ -360,13 +354,6 @@ public:
 
 namespace {
 
-enum class UnlockType {
-	None,
-	Default,
-	Biometrics,
-	Companion,
-};
-
 void BuildManageContent(SectionBuilder &builder) {
 	const auto controller = builder.controller();
 	if (!controller) {
@@ -453,109 +440,6 @@ void BuildManageContent(SectionBuilder &builder) {
 		}, divider->lifetime());
 		return SectionBuilder::WidgetToAdd{};
 	});
-
-	builder.add([](const WidgetContext &ctx) {
-		const auto systemUnlockWrap = ctx.container->add(
-			object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
-				ctx.container,
-				object_ptr<Ui::VerticalLayout>(ctx.container))
-		)->setDuration(0);
-		const auto systemUnlockContent = systemUnlockWrap->entity();
-
-		const auto unlockType = systemUnlockContent->lifetime().make_state<
-			rpl::variable<UnlockType>
-		>(base::SystemUnlockStatus(
-			true
-		) | rpl::map([](base::SystemUnlockAvailability status) {
-			return status.withBiometrics
-				? UnlockType::Biometrics
-				: status.withCompanion
-				? UnlockType::Companion
-				: status.available
-				? UnlockType::Default
-				: UnlockType::None;
-		}));
-
-		const auto highlights = ctx.highlights;
-
-		unlockType->value(
-		) | rpl::on_next([=](UnlockType type) {
-			while (systemUnlockContent->count()) {
-				delete systemUnlockContent->widgetAt(0);
-			}
-
-			Ui::AddSkip(systemUnlockContent);
-
-			const auto biometricsButton = AddButtonWithIcon(
-				systemUnlockContent,
-				(Platform::IsWindows()
-					? tr::lng_settings_use_winhello()
-					: (type == UnlockType::Biometrics)
-					? tr::lng_settings_use_touchid()
-					: (type == UnlockType::Companion)
-					? tr::lng_settings_use_applewatch()
-					: tr::lng_settings_use_systempwd()),
-				st::settingsButton,
-				{ Platform::IsWindows()
-					? &st::menuIconWinHello
-					: (type == UnlockType::Biometrics)
-					? &st::menuIconTouchID
-					: (type == UnlockType::Companion)
-					? &st::menuIconAppleWatch
-					: &st::menuIconSystemPwd });
-			biometricsButton->toggleOn(
-				rpl::single(Core::App().settings().systemUnlockEnabled())
-			)->toggledChanges(
-			) | rpl::filter([=](bool value) {
-				return value != Core::App().settings().systemUnlockEnabled();
-			}) | rpl::on_next([=](bool value) {
-				Core::App().settings().setSystemUnlockEnabled(value);
-				Core::App().saveSettingsDelayed();
-			}, systemUnlockContent->lifetime());
-
-			if (highlights) {
-				highlights->push_back({
-					u"passcode/biometrics"_q,
-					{ biometricsButton.get() },
-				});
-			}
-
-			Ui::AddSkip(systemUnlockContent);
-
-			Ui::AddDividerText(
-				systemUnlockContent,
-				(Platform::IsWindows()
-					? tr::lng_settings_use_winhello_about()
-					: (type == UnlockType::Biometrics)
-					? tr::lng_settings_use_touchid_about()
-					: (type == UnlockType::Companion)
-					? tr::lng_settings_use_applewatch_about()
-					: tr::lng_settings_use_systempwd_about()));
-
-		}, systemUnlockContent->lifetime());
-
-		systemUnlockWrap->toggleOn(unlockType->value(
-		) | rpl::map(rpl::mappers::_1 != UnlockType::None));
-
-		return SectionBuilder::WidgetToAdd{};
-	}, [] {
-		return SearchEntry{
-			.id = u"passcode/biometrics"_q,
-			.title = Platform::IsWindows()
-				? tr::lng_settings_use_winhello(tr::now)
-				: tr::lng_settings_use_touchid(tr::now),
-			.keywords = { u"biometrics"_q, u"touchid"_q, u"faceid"_q,
-				u"winhello"_q, u"fingerprint"_q },
-		};
-	});
-
-	builder.add(nullptr, [] {
-		return SearchEntry{
-			.id = u"passcode/disable"_q,
-			.title = tr::lng_settings_passcode_disable(tr::now),
-			.keywords = { u"disable"_q, u"remove"_q, u"turn off"_q },
-		};
-	});
 }
 
 class LocalPasscodeManage : public Section<LocalPasscodeManage> {
@@ -572,15 +456,10 @@ public:
 
 	[[nodiscard]] rpl::producer<std::vector<Type>> removeFromStack() override;
 
-	[[nodiscard]] base::weak_qptr<Ui::RpWidget> createPinnedToBottom(
-		not_null<Ui::RpWidget*> parent) override;
-
 private:
 	void setupContent();
 
-	rpl::variable<bool> _isBottomFillerShown;
 	rpl::event_stream<> _showBack;
-	QPointer<Ui::RpWidget> _disableButton;
 
 };
 
@@ -649,47 +528,9 @@ void LocalPasscodeManage::setupContent() {
 	Ui::ResizeFitChild(this, content);
 }
 
-base::weak_qptr<Ui::RpWidget> LocalPasscodeManage::createPinnedToBottom(
-		not_null<Ui::RpWidget*> parent) {
-	const auto weak = base::make_weak(this);
-	auto callback = [=] {
-		controller()->show(
-			Ui::MakeConfirmBox({
-				.text = tr::lng_settings_passcode_disable_sure(),
-				.confirmed = [=](Fn<void()> &&close) {
-					SetPasscode(controller(), QString());
-					Core::App().settings().setSystemUnlockEnabled(false);
-					Core::App().saveSettingsDelayed();
-
-					close();
-					if (weak) {
-						_showBack.fire({});
-					}
-					if (weak) {
-						controller()->hideSpecialLayer();
-					}
-				},
-				.confirmText = tr::lng_settings_auto_night_disable(),
-				.confirmStyle = &st::attentionBoxButton,
-			}));
-	};
-	auto bottomButton = CloudPassword::CreateBottomDisableButton(
-		parent,
-		geometryValue(),
-		tr::lng_settings_passcode_disable(),
-		std::move(callback));
-
-	_isBottomFillerShown = base::take(bottomButton.isBottomFillerShown);
-	_disableButton = bottomButton.button.get();
-
-	return bottomButton.content;
-}
-
 void LocalPasscodeManage::showFinished() {
 	Section<LocalPasscodeManage>::showFinished();
-	controller()->checkHighlightControl(
-		u"passcode/disable"_q,
-		_disableButton);
+
 }
 
 rpl::producer<> LocalPasscodeManage::sectionShowBack() {

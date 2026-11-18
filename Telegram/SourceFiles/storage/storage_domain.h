@@ -24,6 +24,8 @@ enum class StartResult : uchar {
 	Success,
 	IncorrectPasscode,
 	IncorrectPasscodeLegacy,
+	StorageError,
+	NeedsPasscodeSetup,
 };
 
 class Domain final {
@@ -39,13 +41,15 @@ public:
 	void startFromScratch();
 
 	[[nodiscard]] bool checkPasscode(const QByteArray &passcode) const;
-	void setPasscode(const QByteArray &passcode);
+	[[nodiscard]] bool setPasscode(const QByteArray &passcode);
 
 	[[nodiscard]] int oldVersion() const;
 	void clearOldVersion();
 
 	[[nodiscard]] rpl::producer<> localPasscodeChanged() const;
 	[[nodiscard]] bool hasLocalPasscode() const;
+	[[nodiscard]] bool requiresPasscodeUpgrade() const;
+	[[nodiscard]] bool needsPasscodeSetup() const;
 
 private:
 	enum class StartModernResult {
@@ -53,6 +57,8 @@ private:
 		IncorrectPasscode,
 		Failed,
 		Empty,
+		StorageError,
+		NeedsPasscodeSetup,
 	};
 
 	[[nodiscard]] StartModernResult startModern(const QByteArray &passcode);
@@ -61,6 +67,7 @@ private:
 		std::unique_ptr<Main::Account> account);
 	void generateLocalKey();
 	void encryptLocalKey(const QByteArray &passcode);
+	[[nodiscard]] QByteArray prepareAccountsInfo() const;
 
 	const not_null<Main::Domain*> _owner;
 	const QString _dataName;
@@ -69,9 +76,12 @@ private:
 	MTP::AuthKeyPtr _passcodeKey;
 	QByteArray _passcodeKeySalt;
 	QByteArray _passcodeKeyEncrypted;
+	QByteArray _pendingAccountInfo;
 	int _oldVersion = 0;
 
+	bool _needsPasscodeSetup = false;
 	bool _hasLocalPasscode = false;
+	bool _requiresPasscodeUpgrade = false;
 	rpl::event_stream<> _passcodeKeyChanged;
 
 };

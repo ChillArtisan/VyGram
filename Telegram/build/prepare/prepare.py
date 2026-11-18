@@ -478,7 +478,7 @@ win:
     bash -c "pacman-key --init; pacman-key --populate; pacman -Syu --noconfirm"
     pacman -Syu --noconfirm ^
         make ^
-        mingw-w64-x86_64-diffutils ^
+        diffutils ^
         mingw-w64-x86_64-gperf ^
         mingw-w64-x86_64-nasm ^
         mingw-w64-x86_64-perl ^
@@ -1077,7 +1077,7 @@ win:
         -DCMAKE_INSTALL_PREFIX=%LIBS_DIR%/local ^
         -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>" ^
         -DCMAKE_C_FLAGS="/DJXL_STATIC_DEFINE /DJXL_THREADS_STATIC_DEFINE /DJXL_CMS_STATIC_DEFINE" ^
-        -DCMAKE_CXX_FLAGS="/DJXL_STATIC_DEFINE /DJXL_THREADS_STATIC_DEFINE /DJXL_CMS_STATIC_DEFINE" ^
+        -DCMAKE_CXX_FLAGS="/FIintrin.h /DJXL_STATIC_DEFINE /DJXL_THREADS_STATIC_DEFINE /DJXL_CMS_STATIC_DEFINE" ^
         %cmake_defines%
     cmake --build . --config Debug
     cmake --install . --config Debug

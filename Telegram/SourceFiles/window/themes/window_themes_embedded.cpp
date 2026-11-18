@@ -26,7 +26,7 @@ namespace Window {
 namespace Theme {
 namespace {
 
-constexpr auto kMaxAccentColors = 3;
+constexpr auto kMaxAccentColors = 5;
 constexpr auto kDayBaseFile = ":/gui/day-custom-base.tdesktop-theme"_cs;
 constexpr auto kNightBaseFile = ":/gui/night-custom-base.tdesktop-theme"_cs;
 
@@ -165,6 +165,13 @@ style::colorizer ColorizerFrom(
 		} };
 		result.lightnessMin = 64;
 		break;
+	case EmbeddedType::Terminal:
+		result.keepContrast = base::flat_map<QLatin1String, Pair>{ {
+			{ qstr("windowFgActive"), Pair{ cColor("d3ba87"), cColor("211c12") } },
+			{ qstr("activeButtonFg"), Pair{ cColor("d3ba87"), cColor("211c12") } },
+		} };
+		result.lightnessMin = 128;
+		break;
 	}
 	const auto nowLightness = color.lightness();
 	const auto limitedLightness = std::clamp(
@@ -285,6 +292,17 @@ std::vector<EmbeddedScheme> EmbeddedThemes() {
 			":/gui/night-green.tdesktop-theme",
 			qColor("3fc1b0")
 		},
+		EmbeddedScheme{
+			EmbeddedType::Terminal,
+			qColor("10110f"),
+			qColor("191c14"),
+			qColor("10110f"),
+			qColor("383c2f"),
+			qColor("d3ba87"),
+			name(tr::lng_settings_theme_terminal),
+			":/gui/terminal.tdesktop-theme",
+			qColor("d3ba87")
+		},
 	};
 }
 
@@ -293,6 +311,17 @@ std::vector<QColor> DefaultAccentColors(EmbeddedType type) {
 		return style::ColorFromHex(hex);
 	};
 	switch (type) {
+	case EmbeddedType::Terminal:
+		return {
+			qColor("d3ba87"),
+			qColor("b2c69a"),
+			qColor("a9bdc0"),
+			qColor("c1acd0"),
+			qColor("cbac98"),
+			qColor("c8a9af"),
+			qColor("bcc2ad"),
+			qColor("d5c9a5"),
+		};
 	case EmbeddedType::DayBlue:
 		return {
 			qColor("45bce7"),
@@ -425,6 +454,7 @@ bool AccentColors::setFromSerialized(const QByteArray &serialized) {
 		case EmbeddedType::DayBlue:
 		case EmbeddedType::Night:
 		case EmbeddedType::NightGreen:
+		case EmbeddedType::Terminal:
 			data.emplace(uncheckedType, color);
 			break;
 		default:

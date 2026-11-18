@@ -5,11 +5,13 @@
 //
 // Copyright @Radolyn, 2026
 #include "ayu/ayu_settings.h"
+#include "ayu/ayu_infra.h"
 
 #include "lang_auto.h"
 #include "tray.h"
 #include "ayu/ayu_ui_settings.h"
 #include "ayu/ayu_worker.h"
+#include "ayu/data/ayu_database.h"
 #include "ayu/features/streamer_mode/streamer_mode.h"
 #include "ayu/ui/ayu_logo.h"
 #include "core/application.h"
@@ -21,15 +23,19 @@
 #include "rpl/combine.h"
 #include "window/window_controller.h"
 
-#include <fstream>
 #include <QApplication>
+#include <QFile>
 
 using json = nlohmann::json;
 
 namespace {
 
-std::string getSettingsPath() {
-	return (cWorkingDir() + u"tdata/ayu_settings.json"_q).toStdString();
+constexpr auto kProtectedSettingsKey = "ayu_settings";
+bool ProtectedSettingsLoaded = false;
+bool LoadingProtectedSettings = false;
+
+QString getSettingsPath() {
+	return cWorkingDir() + u"tdata/ayu_settings.json"_q;
 }
 
 void repaintApp() {
@@ -365,17 +371,56 @@ AyuSettings &AyuSettings::getInstance() {
 }
 
 void AyuSettings::load() {
-	std::ifstream file(getSettingsPath());
-	if (!file.good()) {
-		return;
+	if (AyuDatabase::isUnlocked() && !ProtectedSettingsLoaded) {
+		if (!loadProtected()) {
+			LOG(("AyuGramSettings: failed to load protected settings"));
+		}
 	}
+}
 
-	auto &settings = getInstance();
-
+bool AyuSettings::loadProtected() {
+	if (!AyuDatabase::isUnlocked() || LoadingProtectedSettings) {
+		return false;
+	}
+	if (ProtectedSettingsLoaded) {
+		return true;
+	}
+	LoadingProtectedSettings = true;
+	const auto loadingGuard = gsl::finally([] {
+		LoadingProtectedSettings = false;
+	});
 	try {
-		json p;
-		file >> p;
-		file.close();
+		QFile legacy(getSettingsPath());
+		const auto hasLegacy = legacy.exists();
+		auto bytes = AyuDatabase::loadPrivateSetting(kProtectedSettingsKey);
+		if (bytes.isEmpty() && hasLegacy) {
+			if (!legacy.open(QIODevice::ReadOnly)) {
+				return false;
+			}
+			bytes = legacy.readAll();
+			const auto readFailed = legacy.error() != QFile::NoError;
+			legacy.close();
+			if (readFailed || bytes.isEmpty()) {
+				return false;
+			}
+		}
+		auto p = bytes.isEmpty()
+			? json(getInstance())
+			: json::parse(bytes.constData(), bytes.constData() + bytes.size());
+		if (!p.is_object()) {
+			return false;
+		}
+		if (p.contains("ghostModeSettings")) {
+			if (!p["ghostModeSettings"].is_object()) {
+				return false;
+			}
+			for (const auto &[key, value] : p["ghostModeSettings"].items()) {
+				if (key.empty() || key.find_first_not_of("0123456789") != std::string::npos
+					|| !value.is_object()) {
+					return false;
+				}
+			}
+		}
 
 		if (!p.contains("ghostModeSettings")) {
 			p["ghostModeSettings"] = nlohmann::json::object({
@@ -395,35 +440,54 @@ void AyuSettings::load() {
 			LOG(("AyuGramSettings: migrated ghost mode settings to per-account format"));
 		}
 
-		try {
-			from_json(p, settings);
-		} catch (...) {
-			LOG(("AyuGramSettings: failed to parse settings file"));
+		AyuSettings candidate;
+		from_json(p, candidate);
+		candidate.validate();
+		if (cGhost()) {
+			auto &account = candidate._ghostAccounts[0];
+			if (!account) {
+				account = std::make_unique<GhostModeAccountSettings>();
+			}
+			account->_sendReadMessages = false;
+			account->_sendReadStories = false;
+			account->_sendOnlinePackets = false;
+			account->_sendUploadProgress = false;
+			account->_sendOfflinePacketAfterOnline = true;
 		}
+		const json normalized = candidate;
+		const auto serialized = normalized.dump();
+		const auto protectedBytes = QByteArray(serialized.data(), serialized.size());
+		if (!AyuDatabase::storePrivateSetting(kProtectedSettingsKey, protectedBytes)
+			|| AyuDatabase::loadPrivateSetting(kProtectedSettingsKey) != protectedBytes) {
+			return false;
+		}
+		if (hasLegacy && !legacy.remove()) {
+			return false;
+		}
+		from_json(normalized, getInstance());
+		AyuInfra::applyProtectedUiSettings();
+		ProtectedSettingsLoaded = true;
+		return true;
 	} catch (...) {
-		LOG(("AyuGramSettings: failed to read settings file (not json-like)"));
+		LOG(("AyuGramSettings: failed to restore protected settings"));
+		return false;
 	}
-
-	if (cGhost()) {
-		auto &ghost = AyuSettings::ghost();
-		ghost._sendReadMessages = false;
-		ghost._sendReadStories = false;
-		ghost._sendOnlinePackets = false;
-		ghost._sendUploadProgress = false;
-		ghost._sendOfflinePacketAfterOnline = true;
-	}
-
-	settings.validate();
 }
 
 void AyuSettings::save() {
-	auto &settings = getInstance();
-	json p = settings;
-
-	std::ofstream file;
-	file.open(getSettingsPath());
-	file << p.dump(4);
-	file.close();
+	if (LoadingProtectedSettings || !ProtectedSettingsLoaded || !AyuDatabase::isUnlocked()) {
+		return;
+	}
+	try {
+		const json p = getInstance();
+		const auto serialized = p.dump();
+		if (!AyuDatabase::storePrivateSetting(kProtectedSettingsKey,
+				QByteArray(serialized.data(), serialized.size()))) {
+			LOG(("AyuGramSettings: failed to save protected settings"));
+		}
+	} catch (...) {
+		LOG(("AyuGramSettings: failed to serialize protected settings"));
+	}
 }
 
 void AyuSettings::reset() {

@@ -9,6 +9,7 @@
 #include "ayu/data/entities.h"
 
 #include <functional>
+#include <QByteArray>
 
 class SchemaVersion
 {
@@ -20,6 +21,15 @@ public:
 namespace AyuDatabase {
 
 void initialize();
+[[nodiscard]] bool unlock(const QByteArray &profileKey);
+[[nodiscard]] bool isUnlocked();
+void shutdown();
+
+[[nodiscard]] bool storePrivateSetting(const std::string &name, const QByteArray &value);
+[[nodiscard]] QByteArray loadPrivateSetting(const std::string &name);
+
+[[nodiscard]] bool storeMedia(ID userId, ID mediaId, int mediaType, const QByteArray &bytes);
+[[nodiscard]] QByteArray loadMedia(ID userId, ID mediaId, int mediaType);
 
 void addEditedMessage(const EditedMessage &message);
 std::vector<EditedMessage> getEditedMessages(ID userId, ID dialogId, ID messageId, ID minId, ID maxId, int totalLimit);
@@ -56,6 +66,5 @@ void deleteAllExclusions();
 bool hasFilters();
 bool hasPerDialogFilters();
 
-void moveCurrentDatabase();
 
 }

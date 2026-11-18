@@ -1302,6 +1302,7 @@ historyComposeFieldMaxHeight: 224px;
 historyComposeFieldFadeHeight: 6px;
 historySendRight: 2px;
 historySendPadding: 9px;
+terminalComposeFramePadding: margins(4px, 4px, 4px, 4px);
 // historyMinHeight: 56px;
 
 historyAttach: IconButton(defaultIconButton) {

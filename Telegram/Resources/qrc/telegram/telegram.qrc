@@ -16,6 +16,10 @@
     <file alias="day-blue.tdesktop-theme">../../day-blue.tdesktop-theme</file>
     <file alias="night.tdesktop-theme">../../night.tdesktop-theme</file>
     <file alias="night-green.tdesktop-theme">../../night-green.tdesktop-theme</file>
+    <file alias="terminal.tdesktop-theme">../../terminal.tdesktop-theme</file>
+    <file alias="fonts/JetBrainsMono-Regular.ttf">../../fonts/JetBrainsMono-Regular.ttf</file>
+    <file alias="fonts/JetBrainsMono-OFL.txt">../../fonts/JetBrainsMono-OFL.txt</file>
+    <file alias="licenses/SQLCipher-LICENSE.md">../../../SourceFiles/ayu/libs/sqlite/SQLCipher-LICENSE.md</file>
     <file alias="day-custom-base.tdesktop-theme">../../day-custom-base.tdesktop-theme</file>
     <file alias="night-custom-base.tdesktop-theme">../../night-custom-base.tdesktop-theme</file>
     <file alias="icons/calls/hands.lottie">../../icons/calls/hands.lottie</file>

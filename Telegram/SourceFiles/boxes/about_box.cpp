@@ -56,7 +56,7 @@ rpl::producer<TextWithEntities> Text() {
 } // namespace
 
 void AboutBox(not_null<Ui::GenericBox*> box, Window::SessionController* controller) {
-	box->setTitle(rpl::single(u"AyuGram Desktop"_q));
+	box->setTitle(rpl::single(u"VyGram Desktop"_q));
 
 	auto layout = box->verticalLayout();
 
@@ -87,6 +87,7 @@ void AboutBox(not_null<Ui::GenericBox*> box, Window::SessionController* controll
 		Ui::AddSkip(layout, st::aboutSkip);
 	};
 
+	addText(rpl::single(Ui::Text::WithEntities(tr::ayu_SettingsWatermark(tr::now))));
 	addText(Text());
 
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });

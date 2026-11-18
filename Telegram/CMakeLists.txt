@@ -108,6 +108,10 @@ PRIVATE
 )
 
 set(ayugram_files
+        ayu/security/profile_password.cpp
+        ayu/security/profile_password.h
+        ayu/security/password_policy.h
+        ayu/security/secure_database.h
         ayu/ayu_worker.cpp
         ayu/ayu_worker.h
         ayu/ayu_url_handlers.cpp
@@ -255,6 +259,16 @@ set(ayugram_files
 
         info/profile/info_profile_music_button.cpp
         info/profile/info_profile_music_button.h
+)
+
+# SQLCipher is the archive's SQLite implementation. Keep temporary SQL data
+# in memory and enable the provider hooks required by SQLCipher Community.
+target_compile_definitions(Telegram PRIVATE
+    SQLITE_HAS_CODEC
+    TDESKTOP_DISABLE_CRASH_REPORTS
+)
+set_source_files_properties(${src_loc}/ayu/libs/sqlite/sqlite3.c PROPERTIES
+    COMPILE_DEFINITIONS "SQLITE_HAS_CODEC;SQLITE_TEMP_STORE=3;SQLITE_THREADSAFE=1;SQLCIPHER_CRYPTO_OPENSSL;SQLITE_EXTRA_INIT=sqlcipher_extra_init;SQLITE_EXTRA_SHUTDOWN=sqlcipher_extra_shutdown"
 )
 
 if (NOT DESKTOP_APP_DISABLE_SWIFT6)
@@ -2571,7 +2585,7 @@ else()
         set(bundle_identifier "one.ayugram.AyuGramDesktop")
     endif()
     set(bundle_entitlements "Telegram.entitlements")
-    set(output_name "AyuGram")
+    set(output_name "VyGram")
 endif()
 
 if (CMAKE_GENERATOR STREQUAL Xcode)
@@ -2620,7 +2634,7 @@ get_property(is_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 if (APPLE
     OR is_multi_config
     OR NOT CMAKE_EXECUTABLE_SUFFIX STREQUAL ""
-    OR NOT "${output_name}" STREQUAL "AyuGram")
+    OR NOT "${output_name}" STREQUAL "VyGram")
     set(output_folder ${CMAKE_BINARY_DIR})
 else()
     set(output_folder ${CMAKE_BINARY_DIR}/bin)

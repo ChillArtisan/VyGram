@@ -59,6 +59,10 @@ void Submit(
 		field->showError();
 		fail(tr::lng_flood_error(tr::now));
 		return;
+	case PasscodeAttempt::StorageError:
+		field->showError();
+		fail(tr::lng_terminal_archive_error(tr::now));
+		return;
 	case PasscodeAttempt::Wrong:
 		field->selectAll();
 		field->showError();
@@ -69,7 +73,7 @@ void Submit(
 	}
 	const auto weak = base::make_weak(box);
 	Core::App().unlockPasscode();
-	if (weak) {
+	if (weak && !Core::App().passcodeLocked()) {
 		finish();
 	}
 }
@@ -122,18 +126,25 @@ void UnlockPasscodeBox(
 
 	Ui::AddSkip(content, st::settingLocalPasscodeDescriptionBottomSkip);
 
+	const auto fieldStyle = box->lifetime().make_state<style::InputField>(*st.field);
+	fieldStyle->textMargins.setRight(std::max(fieldStyle->textMargins.right(),
+		st::passcodeRevealButton.width + 2 * st::lineWidth));
 	const auto field = Settings::CloudPassword::AddPasswordField(
 		content,
 		tr::lng_passcode_enter(),
 		QString(),
-		*st.field);
+		*fieldStyle);
 	const auto error = Settings::CloudPassword::AddError(
 		content,
 		field,
 		*st.error,
 		st::boxRowPadding + st::unlockPasscodeErrorPadding);
 
-	const auto submit = [=] { Submit(box, field, error, finish); };
+	const auto hidePassword = AddLocalPasscodeVisibilityToggle(field);
+	const auto submit = [=] {
+		hidePassword();
+		Submit(box, field, error, finish);
+	};
 	QObject::connect(field, &Ui::MaskedInputField::submitted, submit);
 	box->addButton(tr::lng_passcode_submit(), submit);
 	box->setFocusCallback([=] { field->setFocusFast(); });

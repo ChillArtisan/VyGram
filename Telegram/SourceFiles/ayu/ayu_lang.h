@@ -21,6 +21,7 @@ public:
 
 	void fetchLanguage(const QString &id, const QString &baseId);
 	void applyLanguageJson(QJsonDocument doc);
+	[[nodiscard]] static QByteArray brandedValue(const QByteArray &key, const QByteArray &value);
 
 public Q_SLOTS:
 	void fetchFinished();

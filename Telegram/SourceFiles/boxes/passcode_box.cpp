@@ -34,6 +34,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_passcode_box.h"
 #include "base/qt/qt_common_adapters.h"
 
+// AyuGram includes
+#include "window/window_lock_widgets.h"
+
+
 namespace {
 
 enum class PasswordErrorType {
@@ -637,6 +641,14 @@ void PasscodeBox::save(bool force) {
 
 	QString old = _oldPasscode->text(), pwd = _newPasscode->text(), conf = _reenterPasscode->text();
 	const auto has = currentlyHave();
+	if (!_cloudPwd && (_turningOff || !Window::IsStrongLocalPasscode(pwd))) {
+		_newError = _turningOff
+			? tr::lng_terminal_password_required(tr::now)
+			: tr::lng_terminal_password_weak(tr::now);
+		_newPasscode->showError();
+		update();
+		return;
+	}
 	if (!_cloudPwd && (_turningOff || has)) {
 		if (!passcodeCanTry()) {
 			_oldError = tr::lng_flood_error(tr::now);
@@ -714,7 +726,12 @@ void PasscodeBox::save(bool force) {
 		closeReplacedBy();
 		const auto weak = base::make_weak(this);
 		cSetPasscodeBadTries(0);
-		_session->domain().local().setPasscode(pwd.toUtf8());
+		if (!_session->domain().local().setPasscode(pwd.toUtf8())) {
+			_newError = tr::lng_terminal_archive_error(tr::now);
+			_newPasscode->showError();
+			update();
+			return;
+		}
 		Core::App().localPasscodeChanged();
 		if (weak) {
 			closeBox();

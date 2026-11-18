@@ -54,6 +54,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // AyuGram includes
 #include "ayu/features/filters/filters_controller.h"
 #include "styles/style_ayu_icons.h"
+#include "window/themes/window_theme.h"
 
 
 namespace Dialogs::Ui {
@@ -494,6 +495,14 @@ void PaintRow(
 		p.translate(swipeMirrored ? swipeTranslation : -swipeTranslation, 0);
 	}
 	p.fillRect(geometry, bg);
+	if (Window::Theme::IsTerminalTheme()) {
+		p.fillRect(
+			geometry.x(),
+			geometry.bottom() + 1 - st::lineWidth,
+			geometry.width(),
+			st::lineWidth,
+			st::shadowFg);
+	}
 	if (!(flags & Flag::TopicJumpRipple)) {
 		auto ripple = context.active
 			? st::dialogsRippleBgActive

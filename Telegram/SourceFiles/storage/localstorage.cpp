@@ -40,6 +40,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
+#include "ayu/data/ayu_database.h"
+
+#include <QtCore/QFileInfo>
+#include <openssl/crypto.h>
+#include <cstring>
 
 
 //extern "C" {
@@ -91,6 +96,71 @@ bool _backgroundCanWrite = true;
 int32 _oldSettingsVersion = 0;
 bool _settingsRewriteNeeded = false;
 bool _settingsWriteAllowed = false;
+bool _protectedSettingsLoaded = false;
+bool _loadingProtectedSettings = false;
+constexpr auto kProtectedGlobalSettings = "td.global.settings";
+constexpr auto kProtectedSettingsFormat = quint32(0x41594731);
+
+struct GlobalSettingsRecord {
+	qint32 version = AppVersion;
+	QByteArray salt;
+	QByteArray encrypted;
+};
+
+bool ProtectedSettingsReady() {
+	return _protectedSettingsLoaded && SettingsKey && AyuDatabase::isUnlocked();
+}
+
+QByteArray PackSettingsRecord(const GlobalSettingsRecord &record) {
+	auto result = QByteArray();
+	auto stream = QDataStream(&result, QIODevice::WriteOnly);
+	stream.setVersion(QDataStream::Qt_5_1);
+	stream << kProtectedSettingsFormat << record.version << record.salt << record.encrypted;
+	return stream.status() == QDataStream::Ok ? result : QByteArray();
+}
+
+bool UnpackSettingsRecord(const QByteArray &bytes, GlobalSettingsRecord &record) {
+	auto stream = QDataStream(bytes);
+	stream.setVersion(QDataStream::Qt_5_1);
+	auto format = quint32();
+	stream >> format >> record.version >> record.salt >> record.encrypted;
+	return stream.status() == QDataStream::Ok && stream.atEnd()
+		&& format == kProtectedSettingsFormat
+		&& record.version > 0 && record.version <= AppVersion
+		&& record.salt.size() == LocalEncryptSaltSize && !record.encrypted.isEmpty();
+}
+
+bool ParseLegacySettings(const QByteArray &bytes, GlobalSettingsRecord &record) {
+	constexpr auto magic = "TDF$";
+	if (bytes.size() < 24 || std::memcmp(bytes.constData(), magic, 4)) {
+		return false;
+	}
+	std::memcpy(&record.version, bytes.constData() + 4, sizeof(record.version));
+	if (record.version <= 0 || record.version > AppVersion) {
+		return false;
+	}
+	const auto size = qint32(bytes.size() - 24);
+	auto hash = HashMd5();
+	hash.feed(bytes.constData() + 8, size);
+	hash.feed(&size, sizeof(size));
+	hash.feed(&record.version, sizeof(record.version));
+	hash.feed(magic, 4);
+	if (std::memcmp(hash.result(), bytes.constData() + bytes.size() - 16, 16)) {
+		return false;
+	}
+	auto stream = QDataStream(bytes.mid(8, size));
+	stream.setVersion(QDataStream::Qt_5_1);
+	stream >> record.salt >> record.encrypted;
+	return stream.status() == QDataStream::Ok && stream.atEnd()
+		&& record.salt.size() == LocalEncryptSaltSize && !record.encrypted.isEmpty();
+}
+
+bool StoreSettingsRecord(const GlobalSettingsRecord &record) {
+	const auto bytes = PackSettingsRecord(record);
+	return !bytes.isEmpty()
+		&& AyuDatabase::storePrivateSetting(kProtectedGlobalSettings, bytes)
+		&& AyuDatabase::loadPrivateSetting(kProtectedGlobalSettings) == bytes;
+}
 
 enum class WriteMapWhen {
 	Now,
@@ -350,6 +420,12 @@ void sync() {
 void finish() {
 	delete base::take(_localLoader);
 	Storage::details::Finish();
+	_protectedSettingsLoaded = false;
+	SettingsKey = nullptr;
+	if (!_settingsSalt.isEmpty()) {
+		OPENSSL_cleanse(_settingsSalt.data(), _settingsSalt.size());
+		_settingsSalt.clear();
+	}
 }
 
 void InitialLoadTheme();
@@ -358,113 +434,139 @@ void readLangPack();
 
 void start() {
 	Expects(_basePath.isEmpty());
-
 	_localLoader = new TaskQueue(kFileLoaderQueueStopTimeout);
-
 	_basePath = cWorkingDir() + u"tdata/"_q;
-	if (!QDir().exists(_basePath)) QDir().mkpath(_basePath);
+}
 
-	ReadSettingsContext context;
-	FileReadDescriptor settingsData;
-	// We dropped old test authorizations when migrated to multi auth.
-	//const auto name = cTestMode() ? u"settings_test"_q : u"settings"_q;
-	const auto name = u"settings"_q;
-	if (!ReadFile(settingsData, name, _basePath)) {
-		_readOldSettings(true, context);
-		_readOldUserSettings(false, context); // needed further in _readUserSettings
-		_readOldMtpData(false, context); // needed further in _readMtpData
+bool loadProtectedSettings() {
+	if (!AyuDatabase::isUnlocked() || _basePath.isEmpty()) {
+		return false;
+	}
+	if (_protectedSettingsLoaded) {
+		return ProtectedSettingsReady();
+	}
+	if (_loadingProtectedSettings) {
+		return false;
+	}
+	_loadingProtectedSettings = true;
+	const auto loadingGuard = gsl::finally([] {
+		_loadingProtectedSettings = false;
+	});
+	try {
+		auto record = GlobalSettingsRecord();
+		auto legacy = std::vector<std::pair<QString, QByteArray>>();
+		for (const auto &suffix : { u"s"_q, u"0"_q, u"1"_q }) {
+			const auto name = u"settings"_q + suffix;
+			auto file = QFile(_basePath + name);
+			if (!file.exists()) {
+				continue;
+			}
+			if (!file.open(QIODevice::ReadOnly) || file.size() > 64 * 1024 * 1024) {
+				return false;
+			}
+			auto bytes = file.readAll();
+			if (file.error() != QFile::NoError) {
+				return false;
+			}
+			legacy.emplace_back(name, std::move(bytes));
+		}
+		const auto sealed = AyuDatabase::loadPrivateSetting(kProtectedGlobalSettings);
+		if (!sealed.isEmpty()) {
+			if (!UnpackSettingsRecord(sealed, record)) {
+				return false;
+			}
+		} else if (!legacy.empty()) {
+			if (legacy.front().first == u"settingss"_q) {
+				if (!ParseLegacySettings(legacy.front().second, record)) {
+					return false;
+				}
+			} else {
+				if (legacy.size() == 2 && QFileInfo(_basePath + legacy[0].first).lastModified()
+					< QFileInfo(_basePath + legacy[1].first).lastModified()) {
+					std::swap(legacy[0], legacy[1]);
+				}
+				if (!ParseLegacySettings(legacy[0].second, record)
+					&& (legacy.size() != 2 || !ParseLegacySettings(legacy[1].second, record))) {
+					return false;
+				}
+			}
+		} else {
+			const auto files = QDir(_basePath).entryList(QDir::Files | QDir::Hidden);
+			const auto dependent = QRegularExpression(u"^[0-9a-fA-F]{16}[s01]$"_q);
+			for (const auto &name : files) {
+				if (dependent.match(name).hasMatch() || name == u"config"_q) {
+					return false;
+				}
+			}
+			record.salt.resize(LocalEncryptSaltSize);
+			base::RandomFill(record.salt.data(), record.salt.size());
+			auto initial = EncryptedDescriptor(0);
+			record.encrypted = PrepareEncrypted(initial,
+				CreateLegacyLocalKey(QByteArray(), record.salt));
+			_settingsRewriteNeeded = true;
+		}
+		auto key = CreateLegacyLocalKey(QByteArray(), record.salt);
+		auto settings = EncryptedDescriptor();
+		if (!DecryptLocal(settings, record.encrypted, key)) {
+			return false;
+		}
+		auto context = ReadSettingsContext();
+		while (!settings.stream.atEnd()) {
+			auto blockId = quint32();
+			settings.stream >> blockId;
+			if (!CheckStreamStatus(settings.stream)
+				|| !ReadSetting(blockId, settings.stream, record.version, context)) {
+				return false;
+			}
+		}
+		if (!StoreSettingsRecord(record)) {
+			return false;
+		}
+		for (const auto &[name, bytes] : legacy) {
+			const auto archiveName = std::string("td.global.settings.legacy.") + name.toStdString();
+			auto recovery = QByteArray();
+			auto stream = QDataStream(&recovery, QIODevice::WriteOnly);
+			stream.setVersion(QDataStream::Qt_5_1);
+			stream << bytes;
+			if (stream.status() != QDataStream::Ok
+				|| !AyuDatabase::storePrivateSetting(archiveName, recovery)
+				|| AyuDatabase::loadPrivateSetting(archiveName) != recovery) {
+				return false;
+			}
+		}
+		_oldSettingsVersion = record.version;
+		_settingsSalt = record.salt;
+		SettingsKey = std::move(key);
+		const auto tileRead = context.tileRead;
+		const auto tileDay = context.tileDay;
+		const auto tileNight = context.tileNight;
 		applyReadContext(std::move(context));
-
-		_settingsRewriteNeeded = true;
-		ApplyDefaultNightMode();
-		return;
-	}
-	LOG(("App Info: reading settings..."));
-
-	QByteArray salt, settingsEncrypted;
-	settingsData.stream >> salt >> settingsEncrypted;
-	if (!CheckStreamStatus(settingsData.stream)) {
-		return writeSettings();
-	}
-
-	if (salt.size() != LocalEncryptSaltSize) {
-		LOG(("App Error: bad salt in settings file, size: %1").arg(salt.size()));
-		return writeSettings();
-	}
-	SettingsKey = CreateLegacyLocalKey(QByteArray(), salt);
-
-	EncryptedDescriptor settings;
-	if (!DecryptLocal(settings, settingsEncrypted, SettingsKey)) {
-		LOG(("App Error: could not decrypt settings from settings file..."));
-		return writeSettings();
-	}
-
-	LOG(("App Info: reading encrypted settings..."));
-	while (!settings.stream.atEnd()) {
-		quint32 blockId;
-		settings.stream >> blockId;
-		if (!CheckStreamStatus(settings.stream)) {
-			return writeSettings();
+		for (const auto &[name, bytes] : legacy) {
+			if (!QFile::remove(_basePath + name)) {
+				return false;
+			}
 		}
-
-		if (!ReadSetting(blockId, settings.stream, settingsData.version, context)) {
-			return writeSettings();
+		_protectedSettingsLoaded = true;
+		InitialLoadTheme();
+		if (tileRead && _useGlobalBackgroundKeys) {
+			Window::Theme::Background()->setTileDayValue(tileDay);
+			Window::Theme::Background()->setTileNightValue(tileNight);
 		}
+		readLangPack();
+		return true;
+	} catch (...) {
+		_protectedSettingsLoaded = false;
+		return false;
 	}
-
-	_oldSettingsVersion = settingsData.version;
-	_settingsSalt = salt;
-
-	applyReadContext(std::move(context));
-	if (context.legacyRead) {
-		writeSettings();
-	}
-
-	InitialLoadTheme();
-
-	if (context.tileRead && _useGlobalBackgroundKeys) {
-		Window::Theme::Background()->setTileDayValue(context.tileDay);
-		Window::Theme::Background()->setTileNightValue(context.tileNight);
-	}
-
-	readLangPack();
 }
 
 void writeSettings() {
-	if (!_settingsWriteAllowed) {
+	if (!ProtectedSettingsReady() || _loadingProtectedSettings || !_settingsWriteAllowed) {
 		_settingsRewriteNeeded = true;
-
-		// We need to generate SettingsKey anyway,
-		// for the moveLegacyBackground to work.
-		if (SettingsKey) {
-			return;
-		}
-	}
-	if (_basePath.isEmpty()) {
-		LOG(("App Error: _basePath is empty in writeSettings()"));
 		return;
 	}
+	AyuSettings::save();
 
-	if (!QDir().exists(_basePath)) QDir().mkpath(_basePath);
-
-    AyuSettings::save();
-
-	// We dropped old test authorizations when migrated to multi auth.
-	//const auto name = cTestMode() ? u"settings_test"_q : u"settings"_q;
-	const auto name = u"settings"_q;
-	FileWriteDescriptor settings(name, _basePath);
-	if (_settingsSalt.isEmpty() || !SettingsKey) {
-		_settingsSalt.resize(LocalEncryptSaltSize);
-		base::RandomFill(_settingsSalt.data(), _settingsSalt.size());
-		SettingsKey = CreateLegacyLocalKey(QByteArray(), _settingsSalt);
-	}
-	settings.writeData(_settingsSalt);
-
-	if (!_settingsWriteAllowed) {
-		EncryptedDescriptor data(0);
-		settings.writeEncrypted(data, SettingsKey);
-		return;
-	}
 	const auto configSerialized = LookupFallbackConfig().serialize();
 	const auto applicationSettings = Core::App().settings().serialize();
 
@@ -518,10 +620,20 @@ void writeSettings() {
 		data.stream << quint32(dbiLanguagesKey) << quint64(_languagesKey);
 	}
 
-	settings.writeEncrypted(data, SettingsKey);
+	if (!StoreSettingsRecord(GlobalSettingsRecord{
+			AppVersion, _settingsSalt, PrepareEncrypted(data, SettingsKey) })) {
+		_settingsRewriteNeeded = true;
+		LOG(("Could not persist protected application settings."));
+	} else {
+		_settingsRewriteNeeded = false;
+	}
 }
 
 void rewriteSettingsIfNeeded() {
+	if (!ProtectedSettingsReady()) {
+		_settingsRewriteNeeded = true;
+		return;
+	}
 	if (_settingsWriteAllowed) {
 		return;
 	}
@@ -643,6 +755,10 @@ bool readUpdateManifest(QByteArray *manifest, QByteArray *signature) {
 }
 
 void writeBackground(const Data::WallPaper &paper, const QImage &image) {
+	if (!ProtectedSettingsReady() || _loadingProtectedSettings) {
+		return;
+	}
+
 	Expects(_settingsWriteAllowed);
 
 	if (!_backgroundCanWrite) {
@@ -701,6 +817,9 @@ void writeBackground(const Data::WallPaper &paper, const QImage &image) {
 }
 
 bool readBackground() {
+	if (!ProtectedSettingsReady()) {
+		return false;
+	}
 	FileReadDescriptor bg;
 	auto &backgroundKey = Window::Theme::IsNightMode()
 		? _backgroundKeyNight
@@ -822,6 +941,9 @@ void moveLegacyBackground(
 		const MTP::AuthKeyPtr &fromLocalKey,
 		uint64 legacyBackgroundKeyDay,
 		uint64 legacyBackgroundKeyNight) {
+	if (!ProtectedSettingsReady() || _loadingProtectedSettings) {
+		return;
+	}
 	if (_useGlobalBackgroundKeys
 		|| (!legacyBackgroundKeyDay && !legacyBackgroundKeyNight)) {
 		return;
@@ -932,6 +1054,9 @@ void cancelTask(TaskId id) {
 }
 
 Window::Theme::Saved readThemeUsingKey(FileKey key) {
+	if (!ProtectedSettingsReady()) {
+		return {};
+	}
 	using namespace Window::Theme;
 
 	FileReadDescriptor theme;
@@ -1090,6 +1215,10 @@ std::optional<QString> InitialLoadThemeUsingKey(FileKey key) {
 }
 
 void writeTheme(const Window::Theme::Saved &saved) {
+	if (!ProtectedSettingsReady() || _loadingProtectedSettings) {
+		return;
+	}
+
 	using namespace Window::Theme;
 
 	if (_themeKeyLegacy) {
@@ -1256,6 +1385,9 @@ Window::Theme::Saved readThemeAfterSwitch() {
 }
 
 void readLangPack() {
+	if (!ProtectedSettingsReady()) {
+		return;
+	}
 	FileReadDescriptor langpack;
 	if (!_langPackKey || !ReadEncryptedFile(langpack, _langPackKey, _basePath, SettingsKey)) {
 		return;
@@ -1268,6 +1400,10 @@ void readLangPack() {
 }
 
 void writeLangPack() {
+	if (!ProtectedSettingsReady() || _loadingProtectedSettings) {
+		return;
+	}
+
 	auto langpack = Lang::GetInstance().serialize();
 	if (!_langPackKey) {
 		_langPackKey = GenerateKey(_basePath);
@@ -1282,6 +1418,10 @@ void writeLangPack() {
 }
 
 void saveRecentLanguages(const std::vector<Lang::Language> &list) {
+	if (!ProtectedSettingsReady() || _loadingProtectedSettings) {
+		return;
+	}
+
 	if (list.empty()) {
 		if (_languagesKey) {
 			ClearKey(_languagesKey, _basePath);
@@ -1346,6 +1486,9 @@ void removeRecentLanguage(const QString &id) {
 }
 
 std::vector<Lang::Language> readRecentLanguages() {
+	if (!ProtectedSettingsReady()) {
+		return {};
+	}
 	FileReadDescriptor languages;
 	if (!_languagesKey || !ReadEncryptedFile(languages, _languagesKey, _basePath, SettingsKey)) {
 		return {};
@@ -1374,6 +1517,9 @@ std::vector<Lang::Language> readRecentLanguages() {
 }
 
 Window::Theme::Object ReadThemeContent() {
+	if (!ProtectedSettingsReady()) {
+		return {};
+	}
 	using namespace Window::Theme;
 
 	const auto &themeKey = IsNightMode() ? _themeKeyNight : _themeKeyDay;

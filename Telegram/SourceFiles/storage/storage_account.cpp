@@ -42,11 +42,23 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "webview/webview_interface.h"
 #include "window/themes/window_theme.h"
 
+// AyuGram includes
+#include <openssl/crypto.h>
+#include <stdexcept>
+#include <QFileInfo>
+#include <QSaveFile>
+
 namespace Storage {
 namespace {
 
 using namespace details;
 using Database = Cache::Database;
+
+[[nodiscard]] bool HasAccountMap(const QString &path) {
+	return QFileInfo::exists(path + u"maps"_q)
+		|| QFileInfo::exists(path + u"map0"_q)
+		|| QFileInfo::exists(path + u"map1"_q);
+}
 
 constexpr auto kDelayedWriteTimeout = crl::time(1000);
 constexpr auto kWriteSearchSuggestionsDelay = 5 * crl::time(1000);
@@ -208,8 +220,19 @@ QString Account::supportModePath() const {
 }
 
 StartResult Account::legacyStart(const QByteArray &passcode) {
+	// The temporary importer must retain the old key wrapper until Domain
+	// has synchronously persisted a replacement. Normal startup rereads it.
+	const auto deferWrites = gsl::finally([&] {
+		_writeMapTimer.cancel();
+		_writePrefsTimer.cancel();
+		_mapChanged = false;
+		_prefsChanged = false;
+	});
 	const auto result = readMapWith(MTP::AuthKeyPtr(), passcode);
 	if (result == ReadMapResult::Failed) {
+		if (HasAccountMap(_basePath)) {
+			return StartResult::StorageError;
+		}
 		Assert(_localKey == nullptr);
 	} else if (result == ReadMapResult::IncorrectPasscode) {
 		return StartResult::IncorrectPasscodeLegacy;
@@ -222,7 +245,10 @@ std::unique_ptr<MTP::Config> Account::start(MTP::AuthKeyPtr localKey) {
 	Expects(localKey != nullptr);
 
 	_localKey = std::move(localKey);
-	readMapWith(_localKey);
+	if (readMapWith(_localKey) == ReadMapResult::Failed
+		&& HasAccountMap(_basePath)) {
+		throw std::runtime_error("Could not open the account map safely.");
+	}
 	clearLegacyFiles();
 	return readMtpConfig();
 }
@@ -308,6 +334,7 @@ Account::ReadMapResult Account::readMapWith(
 		MTP::AuthKeyPtr localKey,
 		const QByteArray &legacyPasscode) {
 	auto ms = crl::now();
+	const auto modernKey = (localKey != nullptr);
 
 	FileReadDescriptor mapData;
 	if (!ReadFile(mapData, u"map"_q, _basePath)) {
@@ -333,6 +360,10 @@ Account::ReadMapResult Account::readMapWith(
 			return ReadMapResult::IncorrectPasscode;
 		}
 		auto key = Serialize::read<MTP::AuthKey::Data>(keyData.stream);
+		const auto wipe = gsl::finally([&] {
+			OPENSSL_cleanse(key.data(), key.size());
+			OPENSSL_cleanse(keyData.data.data(), keyData.data.size());
+		});
 		if (keyData.stream.status() != QDataStream::Ok || !keyData.stream.atEnd()) {
 			LOG(("App Error: could not read pass-protected key from map file"));
 			return ReadMapResult::Failed;
@@ -344,6 +375,59 @@ Account::ReadMapResult Account::readMapWith(
 	if (!DecryptLocal(map, mapEncrypted, localKey)) {
 		LOG(("App Error: could not decrypt map."));
 		return ReadMapResult::Failed;
+	}
+	if (modernKey && (!legacySalt.isEmpty() || !legacyKeyEncrypted.isEmpty()
+		|| QFileInfo::exists(_basePath + u"map0"_q)
+		|| QFileInfo::exists(_basePath + u"map1"_q))) {
+		// An old per-account wrapper could otherwise expose the same master
+		// key through its previous PIN even after the global password changes.
+		// Keep the original version: the untouched payload contains peers
+		// serialized using that version's format.
+		auto payload = QByteArray();
+		{
+			QDataStream stream(&payload, QIODevice::WriteOnly);
+			stream.setVersion(QDataStream::Qt_5_1);
+			stream << QByteArray() << QByteArray() << mapEncrypted;
+			if (!CheckStreamStatus(stream)) {
+				throw std::runtime_error("Could not encode the protected account map.");
+			}
+		}
+		constexpr char magic[] = { 'T', 'D', 'F', '$' };
+		const auto size = qint32(payload.size());
+		const auto version = qint32(mapData.version);
+		auto hash = HashMd5();
+		hash.feed(payload.constData(), payload.size());
+		hash.feed(&size, sizeof(size));
+		hash.feed(&version, sizeof(version));
+		hash.feed(magic, sizeof(magic));
+		auto output = QSaveFile(_basePath + u"maps"_q);
+		output.setDirectWriteFallback(false);
+		if (!output.open(QIODevice::WriteOnly)
+			|| output.write(magic, sizeof(magic)) != qint64(sizeof(magic))
+			|| output.write(reinterpret_cast<const char*>(&version), sizeof(version)) != qint64(sizeof(version))
+			|| output.write(payload) != payload.size()
+			|| output.write(reinterpret_cast<const char*>(hash.result()), 16) != 16
+			|| !output.commit()) {
+			throw std::runtime_error("Could not protect the account key.");
+		}
+		FileReadDescriptor verified;
+		QByteArray salt, wrapped, encrypted;
+		if (!ReadFile(verified, u"map"_q, _basePath)) {
+			throw std::runtime_error("Could not protect the account key.");
+		}
+		verified.stream >> salt >> wrapped >> encrypted;
+		if (verified.version != mapData.version
+			|| !CheckStreamStatus(verified.stream) || !verified.stream.atEnd()
+			|| !salt.isEmpty() || !wrapped.isEmpty() || encrypted != mapEncrypted) {
+			throw std::runtime_error("Could not verify the protected account key.");
+		}
+		for (const auto &suffix : { u"0"_q, u"1"_q }) {
+			const auto backup = _basePath + u"map"_q + suffix;
+			if ((QFile::exists(backup) && !QFile::remove(backup))
+				|| QFileInfo::exists(backup)) {
+				throw std::runtime_error("Could not remove an old account key wrapper.");
+			}
+		}
 	}
 	LOG(("App Info: reading encrypted map..."));
 

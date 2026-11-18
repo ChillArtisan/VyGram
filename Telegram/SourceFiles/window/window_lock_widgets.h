@@ -11,17 +11,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/animations.h"
 #include "ui/layers/box_content.h"
 #include "base/bytes.h"
-#include "base/timer.h"
-
-namespace base {
-enum class SystemUnlockResult;
-} // namespace base
 
 namespace Ui {
 class PasswordInput;
 class LinkButton;
 class RoundButton;
 class CheckView;
+class FlatLabel;
 } // namespace Ui
 
 namespace Main {
@@ -37,6 +33,7 @@ enum class PasscodeAttempt : uchar {
 	Empty,
 	Flood,
 	Wrong,
+	StorageError,
 	Correct,
 };
 
@@ -44,6 +41,9 @@ enum class PasscodeAttempt : uchar {
 // Core::App().unlockPasscode() destroys the main lock screen widget, so
 // the caller runs it as its own last statement.
 [[nodiscard]] PasscodeAttempt TryPasscode(const QString &passcode);
+[[nodiscard]] bool IsStrongLocalPasscode(const QString &passcode);
+[[nodiscard]] Fn<void()> AddLocalPasscodeVisibilityToggle(
+	not_null<Ui::PasswordInput*> field);
 
 class LockWidget : public Ui::RpWidget {
 public:
@@ -77,32 +77,20 @@ protected:
 	void resizeEvent(QResizeEvent *e) override;
 
 private:
-	enum class SystemUnlockType : uchar {
-		None,
-		Default,
-		Biometrics,
-		Companion,
-	};
-
-	void paintContent(QPainter &p) override;
-
-	void setupSystemUnlockInfo();
-	void setupSystemUnlock();
-	void suggestSystemUnlock();
-	void systemUnlockDone(base::SystemUnlockResult result);
 	void changed();
 	void submit();
 	void error();
 
-	rpl::variable<SystemUnlockType> _systemUnlockAvailable;
-	rpl::variable<SystemUnlockType> _systemUnlockAllowed;
+	const bool _setup;
+	object_ptr<Ui::FlatLabel> _title;
+	object_ptr<Ui::FlatLabel> _about;
 	object_ptr<Ui::PasswordInput> _passcode;
+	object_ptr<Ui::PasswordInput> _confirm;
+	object_ptr<Ui::FlatLabel> _errorLabel;
 	object_ptr<Ui::RoundButton> _submit;
-	object_ptr<Ui::LinkButton> _logout;
+	Fn<void()> _hidePasscode;
+	Fn<void()> _hideConfirm;
 	QString _error;
-
-	rpl::lifetime _systemUnlockSuggested;
-	base::Timer _systemUnlockCooldown;
 
 };
 

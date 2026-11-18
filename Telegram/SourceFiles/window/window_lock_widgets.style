@@ -7,13 +7,48 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 using "boxes/boxes.style";
 
+passcodeTitle: FlatLabel(defaultFlatLabel) {
+	align: align(center);
+	textFg: windowFg;
+	style: TextStyle(defaultTextStyle) {
+		font: font(21px semibold);
+		lineHeight: 28px;
+	}
+}
+passcodeAbout: FlatLabel(defaultFlatLabel) {
+	align: align(center);
+	textFg: windowSubTextFg;
+	style: TextStyle(defaultTextStyle) {
+		lineHeight: 21px;
+	}
+}
+passcodeError: FlatLabel(passcodeAbout) {
+	textFg: boxTextFgError;
+}
+passcodePagePadding: 24px;
+passcodeTitleSkip: 12px;
+passcodeArchiveAboutSkip: 20px;
+passcodeFieldSkip: 12px;
+passcodeErrorSkip: 8px;
 passcodeHeaderFont: font(19px);
 passcodeHeaderHeight: 80px;
 passcodeInput: InputField(introPhone) {
-	textMargins: margins(1px, 27px, 1px, 6px);
+	width: 360px;
+	textMargins: margins(1px, 27px, 38px, 6px);
 }
+passcodeRevealButton: IconButton(defaultIconButton) {
+	width: 36px;
+	height: 36px;
+	icon: icon{{ "mediaview/views", windowSubTextFg }};
+	iconOver: icon{{ "mediaview/views", windowFg }};
+	iconPosition: point(-1px, -1px);
+	rippleAreaSize: 32px;
+	rippleAreaPosition: point(2px, 2px);
+}
+passcodeRevealActive: icon{{ "mediaview/views", activeButtonBg }};
 passcodeSubmit: RoundButton(introNextButton) {
-	width: 225px;
+	width: 360px;
+	radius: 3px;
 }
 passcodeSubmitSkip: 40px;
 passcodeSystemUnlock: IconButton(defaultIconButton) {

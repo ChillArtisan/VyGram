@@ -247,6 +247,7 @@ public:
 	[[nodiscard]] static AyuSettings &getInstance();
 
 	static void load();
+	[[nodiscard]] static bool loadProtected();
 	static void save();
 	static void reset();
 

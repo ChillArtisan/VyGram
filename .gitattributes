@@ -5,5 +5,9 @@
 *.diff text eol=lf
 *.bat text eol=crlf
 
+# Preserve the reproducible upstream SQLCipher amalgamation byte-for-byte.
+Telegram/SourceFiles/ayu/libs/sqlite/sqlite3.c text eol=lf
+Telegram/SourceFiles/ayu/libs/sqlite/sqlite3.h text eol=lf
+
 # Ensure lottie animations are treated as binary files
 *.lottie binary

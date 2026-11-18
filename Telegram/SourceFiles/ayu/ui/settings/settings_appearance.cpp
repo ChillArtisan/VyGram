@@ -26,10 +26,14 @@
 #include "styles/style_menu_icons.h"
 #include "styles/style_settings.h"
 #include "ui/painter.h"
+#include "ui/chat/chat_style_radius.h"
 #include "ui/widgets/labels.h"
 #include "ui/wrap/padding_wrap.h"
 #include "ui/wrap/vertical_layout.h"
 #include "window/window_session_controller.h"
+#include "window/themes/window_theme.h"
+#include "base/weak_ptr.h"
+#include "crl/crl_on_main.h"
 
 namespace Settings {
 
@@ -232,6 +236,50 @@ void BuildAppearance(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	ayu.addSectionDivider();
 }
 
+void BuildTerminalDesign(SectionBuilder &builder) {
+	const auto controller = builder.controller();
+	builder.addSubsectionTitle(tr::lng_settings_theme_terminal());
+	builder.addButton({
+		.id = u"ayu/terminalDesign"_q,
+		.title = tr::lng_settings_theme_terminal_apply(),
+		.st = &st::settingsButtonNoIcon,
+		.onClick = [=] {
+			const auto apply = crl::guard(controller, [=] {
+				const auto path = Window::Theme::TerminalThemePath();
+				if (Window::Theme::IsNightMode()) {
+					if (!Window::Theme::Apply(path)) {
+						return;
+					}
+				} else {
+					Window::Theme::ToggleNightMode(path);
+				}
+				if (!Window::Theme::IsTerminalTheme()) {
+					return;
+				}
+				Window::Theme::KeepApplied();
+				auto &settings = AyuSettings::getInstance();
+				settings.setMessageBubbleRadius(2);
+				settings.setRemoveMessageTail(true);
+				settings.setAvatarCorners(2);
+				settings.setSingleCornerRadius(true);
+				settings.setMonoFont(u"JetBrains Mono"_q);
+				Ui::SetAppliedBubbleRadius(2);
+				ShowRestartPrompt(controller);
+			});
+			if (Window::Theme::IsNightMode()) {
+				apply();
+			} else {
+				Window::Theme::ToggleNightModeWithConfirmation(
+					&controller->window(),
+					apply);
+			}
+		},
+	});
+	builder.addDividerText(tr::lng_settings_theme_terminal_description());
+	builder.addSkip();
+	builder.addDivider();
+}
+
 void BuildChatFolders(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	builder.addSubsectionTitle(tr::ayu_ChatFoldersHeader());
 
@@ -383,6 +431,7 @@ const auto kMeta = BuildHelper({
 	auto ayu = AyuSectionBuilder(builder);
 
 	builder.addSkip();
+	BuildTerminalDesign(builder);
 	BuildAppIcon(builder, ayu);
 	BuildAvatarCorners(builder, ayu);
 	BuildAppearance(builder, ayu);

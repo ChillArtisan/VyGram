@@ -1,3 +1,23 @@
+# VyGram
+
+Personal Telegram Desktop client based on [AyuGram Desktop](https://github.com/AyuGram/AyuGramDesktop).
+
+This fork adds the Terminal appearance, local password visibility controls,
+password-protected profile startup, and encrypted persistent message/media storage.
+
+- [Terminal design and appearance](docs/terminal-design.md)
+- [Protected storage, limitations and validation](docs/protected-storage.md)
+
+This is a development build. Protection covers data at rest within the supported
+profile/storage paths; locking the window does not unload keys from memory.
+An independent security audit has not been performed.
+
+Clone with submodules (`git clone --recursive`). Upstream licenses, attribution
+and source history are retained. Build instructions and the original AyuGram
+project information follow below.
+
+---
+
 # AyuGram
 
 ![AyuGram Logo](.github/AyuGram.png) ![AyuChan](.github/AyuChan.png)

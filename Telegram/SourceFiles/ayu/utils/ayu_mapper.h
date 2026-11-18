@@ -17,5 +17,7 @@ template<typename MTPObject>
 std::pair<std::string, std::vector<char>> serializeTextWithEntities(not_null<HistoryItem*> item);
 [[nodiscard]] MTPVector<MTPMessageEntity> deserializeTextWithEntities(std::vector<char> serialized);
 int mapItemFlagsToMTPFlags(not_null<HistoryItem*> item);
+[[nodiscard]] std::vector<char> serializeMedia(not_null<HistoryItem*> item);
+[[nodiscard]] MTPMessageMedia deserializeMedia(const std::vector<char> &serialized);
 
 } // namespace AyuMapper

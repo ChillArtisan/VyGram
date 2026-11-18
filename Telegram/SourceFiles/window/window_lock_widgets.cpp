@@ -7,9 +7,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/window_lock_widgets.h"
 
-#include "base/platform/base_platform_info.h"
-#include "base/call_delayed.h"
-#include "base/system_unlock.h"
 #include "lang/lang_keys.h"
 #include "storage/storage_domain.h"
 #include "mainwindow.h"
@@ -31,12 +28,81 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_passcode_box.h"
 #include "styles/style_window_lock_widgets.h"
 
+// AyuGram includes
+#include "ayu/security/password_policy.h"
+#include "base/event_filter.h"
+
+
 namespace Window {
-namespace {
 
-constexpr auto kSystemUnlockDelay = crl::time(1000);
+Fn<void()> AddLocalPasscodeVisibilityToggle(
+		not_null<Ui::PasswordInput*> field) {
+	const auto button = Ui::CreateChild<Ui::IconButton>(
+		field.get(), st::passcodeRevealButton);
+	button->setFocusPolicy(Qt::TabFocus);
+	QWidget::setTabOrder(field, button);
+	const auto reserve = std::max(0,
+		button->width() - field->contentsMargins().right());
+	field->QLineEdit::setTextMargins(0, 0, reserve, 0);
+	const auto setVisible = [=](bool visible) {
+		const auto cursor = field->cursorPosition();
+		field->setEchoMode(visible ? QLineEdit::Normal : QLineEdit::Password);
+		field->setCursorPosition(cursor);
+		button->setIconOverride(visible
+			? &st::passcodeRevealActive : nullptr);
+		const auto text = visible
+			? tr::lng_gift_menu_hide(tr::now)
+			: tr::lng_gift_menu_show(tr::now);
+		button->setAccessibleName(text);
+		button->setToolTip(text);
+		button->accessibilityNameChanged();
+	};
+	const auto hide = [=] { setVisible(false); };
+	hide();
+	button->setClickedCallback([=] {
+		const auto visible = field->echoMode() != QLineEdit::Normal;
+		if (!button->hasFocus()) {
+			field->setFocusFast();
+		}
+		setVisible(visible);
+	});
+	base::install_event_filter(button, [=](not_null<QEvent*> event) {
+		if (event->type() == QEvent::FocusIn) {
+			button->setSynteticOver(true);
+		} else if (event->type() == QEvent::FocusOut) {
+			button->setSynteticOver(false);
+			hide();
+		} else if (event->type() == QEvent::Hide) {
+			hide();
+		}
+		return base::EventFilterResult::Continue;
+	});
+	field->sizeValue() | rpl::on_next([=](QSize size) {
+		button->moveToRight(0, size.height() - button->height());
+	}, button->lifetime());
+	QObject::connect(field, &Ui::MaskedInputField::blurred, field, hide);
+	QObject::connect(field, &Ui::MaskedInputField::cancelled, field, hide);
+	rpl::merge(field->shownValue(), field->windowActiveValue()
+	) | rpl::on_next([=](bool active) {
+		if (!active) {
+			hide();
+		}
+	}, field->lifetime());
+	return hide;
+}
 
-} // namespace
+bool IsStrongLocalPasscode(const QString &passcode) {
+	for (auto i = 0; i != passcode.size(); ++i) {
+		if (passcode[i].isHighSurrogate()) {
+			if (++i == passcode.size() || !passcode[i].isLowSurrogate()) {
+				return false;
+			}
+		} else if (passcode[i].isLowSurrogate()) {
+			return false;
+		}
+	}
+	return Ayu::Security::IsStrongLocalPassword(passcode.toStdU32String());
+}
 
 PasscodeAttempt TryPasscode(const QString &passcode) {
 	if (passcode.isEmpty()) {
@@ -46,9 +112,17 @@ PasscodeAttempt TryPasscode(const QString &passcode) {
 	}
 	const auto utf8 = passcode.toUtf8();
 	auto &domain = Core::App().domain();
-	const auto correct = domain.started()
-		? domain.local().checkPasscode(utf8)
-		: (domain.start(utf8) == Storage::StartResult::Success);
+	auto correct = false;
+	if (domain.started()) {
+		correct = domain.local().checkPasscode(utf8);
+	} else {
+		const auto result = domain.start(utf8);
+		if (result == Storage::StartResult::StorageError) {
+			return PasscodeAttempt::StorageError;
+		}
+		correct = (result == Storage::StartResult::Success)
+			|| (result == Storage::StartResult::NeedsPasscodeSetup);
+	}
 	if (!correct) {
 		cSetPasscodeBadTries(cPasscodeBadTries() + 1);
 		cSetPasscodeLastTry(crl::now());
@@ -117,202 +191,153 @@ PasscodeLockWidget::PasscodeLockWidget(
 	QWidget *parent,
 	not_null<Controller*> window)
 : LockWidget(parent, window)
-, _passcode(this, st::passcodeInput, tr::lng_passcode_ph())
-, _submit(this, tr::lng_passcode_submit(), st::passcodeSubmit)
-, _logout(this, tr::lng_passcode_logout(tr::now)) {
+, _setup(Core::App().domain().local().needsPasscodeSetup()
+	|| (Core::App().domain().started()
+		&& (!Core::App().domain().local().hasLocalPasscode()
+			|| Core::App().domain().local().requiresPasscodeUpgrade())))
+, _title(this, _setup
+	? tr::lng_terminal_password_create_title()
+	: tr::lng_terminal_password_unlock_title(), st::passcodeTitle)
+, _about(this, _setup
+	? tr::lng_terminal_password_setup_about()
+	: tr::lng_terminal_password_unlock_about(), st::passcodeAbout)
+, _passcode(this, st::passcodeInput, _setup
+	? tr::lng_terminal_password_new()
+	: tr::lng_passcode_ph())
+, _confirm(_setup
+	? object_ptr<Ui::PasswordInput>(this,
+		st::passcodeInput, tr::lng_terminal_password_confirm())
+	: nullptr)
+, _errorLabel(this, QString(), st::passcodeError)
+, _submit(this, _setup
+	? tr::lng_terminal_password_create()
+	: tr::lng_passcode_submit(), st::passcodeSubmit) {
+	_hidePasscode = AddLocalPasscodeVisibilityToggle(_passcode);
+	if (_confirm) {
+		_hideConfirm = AddLocalPasscodeVisibilityToggle(_confirm);
+	}
 	connect(_passcode, &Ui::MaskedInputField::changed, [=] { changed(); });
-	connect(_passcode, &Ui::MaskedInputField::submitted, [=] { submit(); });
-	_submit->setClickedCallback([=] { submit(); });
-	_logout->setClickedCallback([=] {
-		window->showLogoutConfirmation();
-	});
-
-	using namespace rpl::mappers;
-	if (Core::App().settings().systemUnlockEnabled()) {
-		_systemUnlockAvailable = base::SystemUnlockStatus(
-			true
-		) | rpl::map([](base::SystemUnlockAvailability status) {
-			return status.withBiometrics
-				? SystemUnlockType::Biometrics
-				: status.withCompanion
-				? SystemUnlockType::Companion
-				: status.available
-				? SystemUnlockType::Default
-				: SystemUnlockType::None;
-		});
-		if (Core::App().domain().started()) {
-			_systemUnlockAllowed = _systemUnlockAvailable.value();
-			setupSystemUnlock();
+	connect(_passcode, &Ui::MaskedInputField::submitted, [=] {
+		if (_confirm) {
+			_confirm->setFocusFast();
 		} else {
-			setupSystemUnlockInfo();
+			submit();
 		}
-	}
-}
-
-void PasscodeLockWidget::setupSystemUnlockInfo() {
-	const auto macos = [&] {
-		return _systemUnlockAvailable.value(
-		) | rpl::map([](SystemUnlockType type) {
-			return (type == SystemUnlockType::Biometrics)
-				? tr::lng_passcode_touchid()
-				: (type == SystemUnlockType::Companion)
-				? tr::lng_passcode_applewatch()
-				: tr::lng_passcode_systempwd();
-		}) | rpl::flatten_latest();
-	};
-	auto text = Platform::IsWindows()
-		? tr::lng_passcode_winhello()
-		: macos();
-	const auto info = Ui::CreateChild<Ui::FlatLabel>(
-		this,
-		std::move(text),
-		st::passcodeSystemUnlockLater);
-	_logout->geometryValue(
-	) | rpl::on_next([=](QRect logout) {
-		info->resizeToWidth(width()
-			- st::boxRowPadding.left()
-			- st::boxRowPadding.right());
-		info->moveToLeft(
-			st::boxRowPadding.left(),
-			logout.y() + logout.height() + st::passcodeSystemUnlockSkip);
-	}, info->lifetime());
-	info->showOn(_systemUnlockAvailable.value(
-	) | rpl::map(rpl::mappers::_1 != SystemUnlockType::None));
-}
-
-void PasscodeLockWidget::setupSystemUnlock() {
-	windowActiveValue() | rpl::skip(1) | rpl::filter([=](bool active) {
-		return active
-			&& !_systemUnlockSuggested
-			&& !_systemUnlockCooldown.isActive();
-	}) | rpl::on_next([=](bool) {
-		[[maybe_unused]] auto refresh = base::SystemUnlockStatus();
-		suggestSystemUnlock();
-	}, lifetime());
-
-	const auto button = Ui::CreateChild<Ui::IconButton>(
-		_passcode.data(),
-		st::passcodeSystemUnlock);
-	if (!Platform::IsWindows()) {
-		using namespace base;
-		_systemUnlockAllowed.value(
-		) | rpl::on_next([=](SystemUnlockType type) {
-			const auto icon = (type == SystemUnlockType::Biometrics)
-				? &st::passcodeSystemTouchID
-				: (type == SystemUnlockType::Companion)
-				? &st::passcodeSystemAppleWatch
-				: &st::passcodeSystemSystemPwd;
-			button->setIconOverride(icon, icon);
-		}, button->lifetime());
-	}
-	button->showOn(_systemUnlockAllowed.value(
-	) | rpl::map(rpl::mappers::_1 != SystemUnlockType::None));
-	_passcode->sizeValue() | rpl::on_next([=](QSize size) {
-		button->moveToRight(0, size.height() - button->height());
-	}, button->lifetime());
-	button->setClickedCallback([=] {
-		const auto delay = st::passcodeSystemUnlock.ripple.hideDuration;
-		base::call_delayed(delay, this, [=] {
-			suggestSystemUnlock();
-		});
 	});
-}
-
-void PasscodeLockWidget::suggestSystemUnlock() {
-	InvokeQueued(this, [=] {
-		if (_systemUnlockSuggested) {
-			return;
-		}
-		_systemUnlockCooldown.cancel();
-
-		using namespace base;
-		_systemUnlockAllowed.value(
-		) | rpl::filter(
-			rpl::mappers::_1 != SystemUnlockType::None
-		) | rpl::take(1) | rpl::on_next([=] {
-			const auto weak = base::make_weak(this);
-			const auto done = [weak](SystemUnlockResult result) {
-				crl::on_main([=] {
-					if (const auto strong = weak.get()) {
-						strong->systemUnlockDone(result);
-					}
-				});
-			};
-			SuggestSystemUnlock(
-				this,
-				(::Platform::IsWindows()
-					? tr::lng_passcode_winhello_unlock(tr::now)
-					: tr::lng_passcode_touchid_unlock(tr::now)),
-				done);
-		}, _systemUnlockSuggested);
-	});
-}
-
-void PasscodeLockWidget::systemUnlockDone(base::SystemUnlockResult result) {
-	if (result == base::SystemUnlockResult::Success) {
-		Core::App().unlockPasscode();
-		return;
+	if (_confirm) {
+		connect(_confirm, &Ui::MaskedInputField::changed, [=] { changed(); });
+		connect(_confirm, &Ui::MaskedInputField::submitted, [=] { submit(); });
 	}
-	_systemUnlockCooldown.callOnce(kSystemUnlockDelay);
-	_systemUnlockSuggested.destroy();
-	if (result == base::SystemUnlockResult::FloodError) {
-		_error = tr::lng_flood_error(tr::now);
-		_passcode->setFocusFast();
-		update();
-	}
-}
-
-void PasscodeLockWidget::paintContent(QPainter &p) {
-	LockWidget::paintContent(p);
-
-	p.setFont(st::passcodeHeaderFont);
-	p.setPen(st::windowFg);
-	p.drawText(QRect(0, _passcode->y() - st::passcodeHeaderHeight, width(), st::passcodeHeaderHeight), tr::lng_passcode_enter(tr::now), style::al_center);
-
-	if (!_error.isEmpty()) {
-		p.setFont(st::boxTextFont);
-		p.setPen(st::boxTextFgError);
-		p.drawText(QRect(0, _passcode->y() + _passcode->height(), width(), st::passcodeSubmitSkip), _error, style::al_center);
-	}
+	_submit->setClickedCallback([=] { submit(); });
 }
 
 void PasscodeLockWidget::submit() {
+	_hidePasscode();
+	if (_hideConfirm) {
+		_hideConfirm();
+	}
+	if (_setup) {
+		if (!IsStrongLocalPasscode(_passcode->text())) {
+			_error = tr::lng_terminal_password_weak(tr::now);
+			_passcode->showError();
+			_passcode->setFocusFast();
+		} else if (_passcode->text() != _confirm->text()) {
+			_error = tr::lng_passcode_differ(tr::now);
+			_confirm->showError();
+			_confirm->selectAll();
+			_confirm->setFocusFast();
+		} else {
+			auto &domain = Core::App().domain();
+			const auto utf8 = _passcode->text().toUtf8();
+			if (!domain.local().setPasscode(utf8)
+				|| (!domain.started()
+					&& domain.start(utf8) != Storage::StartResult::Success)) {
+				_error = tr::lng_terminal_archive_error(tr::now);
+			} else {
+				cSetPasscodeBadTries(0);
+				Core::App().localPasscodeChanged();
+				Core::App().unlockPasscode();
+				return;
+			}
+		}
+		_errorLabel->setText(_error);
+		resizeEvent(nullptr);
+		return;
+	}
 	switch (TryPasscode(_passcode->text())) {
 	case PasscodeAttempt::Empty:
 		_passcode->showError();
 		return;
 	case PasscodeAttempt::Flood:
 		_error = tr::lng_flood_error(tr::now);
-		_passcode->showError();
-		update();
-		return;
+		break;
+	case PasscodeAttempt::StorageError:
+		_error = tr::lng_terminal_archive_error(tr::now);
+		break;
 	case PasscodeAttempt::Wrong:
 		error();
 		return;
 	case PasscodeAttempt::Correct:
-		break;
+		Core::App().unlockPasscode();
+		return;
 	}
-	Core::App().unlockPasscode(); // Destroys this widget.
+	_errorLabel->setText(_error);
+	_passcode->showError();
+	resizeEvent(nullptr);
 }
 
 void PasscodeLockWidget::error() {
 	_error = tr::lng_passcode_wrong(tr::now);
+	_errorLabel->setText(_error);
 	_passcode->selectAll();
 	_passcode->showError();
-	update();
+	resizeEvent(nullptr);
 }
 
 void PasscodeLockWidget::changed() {
 	if (!_error.isEmpty()) {
-		_error = QString();
-		update();
+		_error.clear();
+		_errorLabel->setText(QString());
+		resizeEvent(nullptr);
 	}
 }
 
 void PasscodeLockWidget::resizeEvent(QResizeEvent *e) {
-	_passcode->move((width() - _passcode->width()) / 2, (height() / 3));
-	_submit->move(_passcode->x(), _passcode->y() + _passcode->height() + st::passcodeSubmitSkip);
-	_logout->move(_passcode->x() + (_passcode->width() - _logout->width()) / 2, _submit->y() + _submit->height() + st::linkFont->ascent);
+	const auto fieldWidth = std::min(st::passcodeInput.width,
+		std::max(0, width() - 2 * st::passcodePagePadding));
+	const auto left = (width() - fieldWidth) / 2;
+	_title->resizeToWidth(fieldWidth);
+	_about->resizeToWidth(fieldWidth);
+	_errorLabel->resizeToWidth(fieldWidth);
+	_passcode->resize(fieldWidth, _passcode->height());
+	if (_confirm) {
+		_confirm->resize(fieldWidth, _confirm->height());
+	}
+	const auto fieldsHeight = _passcode->height() + (_confirm
+		? (st::passcodeFieldSkip + _confirm->height()) : 0);
+	const auto submitSkip = std::max(st::passcodeSubmitSkip,
+		st::passcodeErrorSkip + _errorLabel->height()
+			+ st::passcodeErrorSkip);
+	const auto totalHeight = _title->height() + st::passcodeTitleSkip
+		+ _about->height() + st::passcodeArchiveAboutSkip + fieldsHeight
+		+ submitSkip + _submit->height();
+	auto top = std::max(st::passcodePagePadding,
+		(height() - totalHeight) / 2);
+	_title->moveToLeft(left, top);
+	top += _title->height() + st::passcodeTitleSkip;
+	_about->moveToLeft(left, top);
+	top += _about->height() + st::passcodeArchiveAboutSkip;
+	_passcode->moveToLeft(left, top);
+	top += _passcode->height();
+	if (_confirm) {
+		top += st::passcodeFieldSkip;
+		_confirm->moveToLeft(left, top);
+		top += _confirm->height();
+	}
+	_errorLabel->moveToLeft(left, top + st::passcodeErrorSkip);
+	_submit->setFullWidth(fieldWidth);
+	_submit->moveToLeft(left, top + submitSkip);
+
 }
 
 void PasscodeLockWidget::setInnerFocus() {

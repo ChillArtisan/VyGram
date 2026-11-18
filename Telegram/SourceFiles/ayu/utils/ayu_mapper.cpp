@@ -6,6 +6,11 @@
 // Copyright @Radolyn, 2026
 #include "ayu/utils/ayu_mapper.h"
 
+#include "data/data_document.h"
+#include "data/data_photo.h"
+
+#include <cstring>
+
 #include "apiwrap.h"
 #include "api/api_text_entities.h"
 #include "history/history.h"
@@ -90,7 +95,90 @@ std::pair<std::string, std::vector<char>> serializeTextWithEntities(not_null<His
 }
 
 MTPVector<MTPMessageEntity> deserializeTextWithEntities(std::vector<char> serialized) {
+	if (serialized.empty()) {
+		return MTP_vector<MTPMessageEntity>();
+	}
 	return deserializeObject<MTPVector<MTPMessageEntity>>(serialized);
+}
+
+std::vector<char> serializeMedia(not_null<HistoryItem*> item) {
+	const auto media = item->media();
+	if (!media) {
+		return {};
+	}
+	if (const auto photo = media->photo()) {
+		const auto input = photo->mtpInput();
+		if (input.type() != mtpc_inputPhoto) {
+			return {};
+		}
+		const auto &remote = input.c_inputPhoto();
+		const auto data = MTP_photo(MTP_flags(0), MTP_long(photo->id),
+			remote.vaccess_hash(), remote.vfile_reference(), MTP_int(photo->date()),
+			MTP_vector<MTPPhotoSize>(1, MTP_photoSize(MTP_string("y"),
+				MTP_int(photo->width()), MTP_int(photo->height()),
+				MTP_int(photo->imageByteSize(Data::PhotoSize::Large)))),
+			MTPVector<MTPVideoSize>(), MTP_int(photo->getDC()));
+		return serializeObject(MTPMessageMedia(MTP_messageMediaPhoto(
+			MTP_flags(MTPDmessageMediaPhoto::Flag::f_photo), data,
+			MTPint(), MTPDocument())));
+	}
+	if (const auto document = media->document()) {
+		const auto input = document->mtpInput();
+		if (input.type() != mtpc_inputDocument) {
+			return {};
+		}
+		QVector<MTPDocumentAttribute> attributes;
+		attributes.push_back(MTP_documentAttributeFilename(MTP_string(document->filename())));
+		if (document->isVideoFile() || document->isVideoMessage()) {
+			using Flag = MTPDdocumentAttributeVideo::Flag;
+			attributes.push_back(MTP_documentAttributeVideo(
+				MTP_flags(document->isVideoMessage() ? Flag::f_round_message : Flag()),
+				MTP_double(document->duration() / 1000.),
+				MTP_int(document->dimensions.width()), MTP_int(document->dimensions.height()),
+				MTPint(), MTPdouble(), MTPstring()));
+		} else if (document->isAudioFile() || document->isVoiceMessage()) {
+			using Flag = MTPDdocumentAttributeAudio::Flag;
+			attributes.push_back(MTP_documentAttributeAudio(
+				MTP_flags(document->isVoiceMessage() ? Flag::f_voice : Flag()),
+				MTP_int(document->duration() / 1000), MTPstring(), MTPstring(), MTPbytes()));
+		} else if (!document->dimensions.isEmpty()) {
+			attributes.push_back(MTP_documentAttributeImageSize(
+				MTP_int(document->dimensions.width()), MTP_int(document->dimensions.height())));
+		}
+		if (document->isAnimation()) {
+			attributes.push_back(MTP_documentAttributeAnimated());
+		}
+		const auto &remote = input.c_inputDocument();
+		const auto data = MTP_document(MTP_flags(0), MTP_long(document->id),
+			remote.vaccess_hash(), remote.vfile_reference(), MTP_int(document->date),
+			MTP_string(document->mimeString()), MTP_long(document->size),
+			MTPVector<MTPPhotoSize>(), MTPVector<MTPVideoSize>(),
+			MTP_int(document->getDC()), MTP_vector<MTPDocumentAttribute>(attributes));
+		return serializeObject(MTPMessageMedia(MTP_messageMediaDocument(
+			MTP_flags(MTPDmessageMediaDocument::Flag::f_document), data,
+			MTPVector<MTPDocument>(), MTPPhoto(), MTPint(), MTPint())));
+	}
+	return {};
+}
+
+MTPMessageMedia deserializeMedia(const std::vector<char> &serialized) {
+	if (serialized.empty() || (serialized.size() % sizeof(mtpPrime)) != 0) {
+		return MTP_messageMediaEmpty();
+	}
+	mtpBuffer buffer(serialized.size() / sizeof(mtpPrime));
+	memcpy(buffer.data(), serialized.data(), serialized.size());
+	const auto start = buffer.constData();
+	auto from = start;
+	const auto end = from + buffer.size();
+	MTPMessageMedia result;
+	try {
+		if (result.read(from, end) && from == end) {
+			return result;
+		}
+	} catch (...) {
+		LOG(("AyuMapper: Invalid archived media metadata"));
+	}
+	return MTP_messageMediaEmpty();
 }
 
 int mapItemFlagsToMTPFlags(not_null<HistoryItem*> item) {

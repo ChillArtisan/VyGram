@@ -1,4 +1,4 @@
-﻿// This is the source code of AyuGram for Desktop.
+// This is the source code of AyuGram for Desktop.
 //
 // We do not and cannot prevent the use of our code,
 // but be respectful and credit the original author.
@@ -8,7 +8,14 @@
 
 #include "ayu/data/entities.h"
 
+namespace Main { class Session; }
+
 namespace AyuMessages {
+
+[[nodiscard]] MTPMessageMedia restoreMedia(
+	const AyuMessageBase &message,
+	not_null<Main::Session*> session,
+	std::shared_ptr<void> &mediaView);
 
 void addEditedMessage(not_null<HistoryItem *> item);
 std::vector<AyuMessageBase> getEditedMessages(not_null<HistoryItem*> item, ID minId, ID maxId, int totalLimit);

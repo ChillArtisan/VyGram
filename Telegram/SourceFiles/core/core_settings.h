@@ -1110,7 +1110,7 @@ private:
 	bool _includeMutedCounterFolders = true;
 	bool _countUnreadMessages = true;
 	rpl::variable<bool> _notifyAboutPinned = true;
-	int _autoLock = 3600;
+	int _autoLock = 60;
 	rpl::variable<QString> _playbackDeviceId;
 	rpl::variable<QString> _captureDeviceId;
 	rpl::variable<QString> _cameraDeviceId;

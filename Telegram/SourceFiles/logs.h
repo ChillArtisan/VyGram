@@ -37,24 +37,11 @@ inline const char *b(bool v) {
 }
 
 struct MemoryBuffer {
-	MemoryBuffer(const void *ptr, uint32 size) : p(ptr), s(size) {
+	MemoryBuffer(const void *, uint32) {
 	}
 	QString str() const {
-		QString result;
-		const uchar *buf((const uchar*)p);
-		const char *hex = "0123456789ABCDEF";
-		result.reserve(s * 3);
-		for (uint32 i = 0; i < s; ++i) {
-			result += hex[(buf[i] >> 4)];
-			result += hex[buf[i] & 0x0F];
-			result += ' ';
-		}
-		result.chop(1);
-		return result;
+		return QString();
 	}
-
-	const void *p;
-	uint32 s;
 
 };
 
@@ -64,9 +51,5 @@ inline MemoryBuffer mb(const void *ptr, uint32 size) {
 
 } // namespace Logs
 
-#define MTP_LOG(dc, msg) {\
-	if (Logs::DebugEnabled() || !Logs::started()) {\
-		Logs::writeMtp(dc, QString msg);\
-	}\
-}
-//usage MTP_LOG(dc, ("log: %1 %2").arg(1).arg(2))
+// Protocol bodies must not be evaluated or retained by this private fork.
+#define MTP_LOG(dc, msg) do { } while (false)

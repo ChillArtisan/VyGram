@@ -49,6 +49,7 @@ using AuthKeyPtr = std::shared_ptr<AuthKey>;
 namespace Local {
 
 void start();
+[[nodiscard]] bool loadProtectedSettings();
 void sync();
 void finish();
 

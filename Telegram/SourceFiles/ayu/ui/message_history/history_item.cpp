@@ -11,6 +11,7 @@
 #include "ayu/data/entities.h"
 #include "ayu/ui/message_history/history_inner.h"
 #include "ayu/utils/ayu_mapper.h"
+#include "ayu/data/messages_storage.h"
 #include "base/unixtime.h"
 #include "core/application.h"
 #include "core/click_handler_types.h"
@@ -21,6 +22,7 @@
 #include "data/data_user.h"
 #include "history/history.h"
 #include "history/view/history_view_element.h"
+#include "lang/lang_keys.h"
 #include "ui/basic_click_handlers.h"
 #include "ui/text/text_utilities.h"
 
@@ -31,17 +33,30 @@ OwnedItem::OwnedItem(std::nullptr_t) {
 
 OwnedItem::OwnedItem(
 	not_null<HistoryView::ElementDelegate*> delegate,
-	not_null<HistoryItem*> data)
-	: _data(data), _view(_data->createView(delegate)) {
+	not_null<HistoryItem*> data,
+	std::shared_ptr<void> mediaView)
+	: _data(data)
+	, _view(_data->createView(delegate))
+	, _mediaView(std::move(mediaView)) {
 }
 
 OwnedItem::OwnedItem(OwnedItem &&other)
-	: _data(base::take(other._data)), _view(base::take(other._view)) {
+	: _data(base::take(other._data))
+	, _view(base::take(other._view))
+	, _mediaView(base::take(other._mediaView)) {
 }
 
 OwnedItem &OwnedItem::operator=(OwnedItem &&other) {
+	if (this == &other) {
+		return *this;
+	}
+	clearView();
+	if (_data) {
+		_data->destroy();
+	}
 	_data = base::take(other._data);
 	_view = base::take(other._view);
+	_mediaView = base::take(other._mediaView);
 	return *this;
 }
 
@@ -74,12 +89,14 @@ void GenerateItems(
 		from = reinterpret_cast<PeerData*>(history->owner().chatLoaded(message.fromId));
 	}
 	const auto date = message.entityCreateDate;
+	std::shared_ptr<void> mediaView;
+	const auto media = AyuMessages::restoreMedia(message, &history->session(), mediaView);
 	const auto addPart = [&](
 		not_null<HistoryItem*> item,
 		TimeId sentDate = 0,
 		MsgId realId = MsgId())
 	{
-		return callback(OwnedItem(delegate, item), sentDate, realId);
+		return callback(OwnedItem(delegate, item, mediaView), sentDate, realId);
 	};
 
 	const auto makeSimpleTextMessage = [&](TextWithEntities &&text)
@@ -106,7 +123,7 @@ void GenerateItems(
 																: QString("unknown user: %1").arg(message.fromId),
 									},
 									std::move(text),
-									MTP_messageMediaEmpty());
+									media);
 	};
 
 	const auto addSimpleTextMessage = [&](TextWithEntities &&text)
@@ -114,7 +131,13 @@ void GenerateItems(
 		addPart(makeSimpleTextMessage(std::move(text)));
 	};
 
-	const auto text = QString::fromStdString(message.text);
+	auto text = QString::fromStdString(message.text);
+	if (!message.documentSerialized.empty() && media.type() == mtpc_messageMediaEmpty) {
+		if (!text.isEmpty()) {
+			text += '\n';
+		}
+		text += tr::lng_ayu_archive_media_unavailable(tr::now);
+	}
 	auto textAndEntities = Ui::Text::WithEntities(text);
 	const auto entities = AyuMapper::deserializeTextWithEntities(message.textEntities);
 	textAndEntities.entities = Api::EntitiesFromMTP(&history->session(), entities.v);

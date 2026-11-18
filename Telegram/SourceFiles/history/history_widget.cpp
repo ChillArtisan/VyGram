@@ -224,6 +224,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/features/message_shot/message_shot.h"
 #include "ayu/features/forward/ayu_forward.h"
 #include "boxes/abstract_box.h"
+#include "window/themes/window_theme.h"
 
 
 namespace {
@@ -11348,6 +11349,19 @@ void HistoryWidget::drawField(Painter &p, const QRect &rect) {
 	p.setInactive(
 		controller()->isGifPausedAtLeastFor(Window::GifPauseReason::Any));
 	p.fillRect(myrtlrect(0, backy, width(), backh), st::historyReplyBg);
+	if (Window::Theme::IsTerminalTheme() && !_field->isHidden()) {
+		const auto padding = st::terminalComposeFramePadding;
+		const auto frame = _field->geometry().marginsAdded(QMargins(
+			padding.left(),
+			padding.top(),
+			padding.right(),
+			padding.bottom()));
+		p.save();
+		p.setPen(QPen(st::windowBgRipple->c, st::lineWidth));
+		p.setBrush(Qt::NoBrush);
+		p.drawRect(frame);
+		p.restore();
+	}
 
 	const auto media = (!_previewDrawPreview && drawMsgText)
 		? drawMsgText->media()

@@ -16,6 +16,11 @@
 #include "lang/lang_instance.h"
 #include "ui/chat/chat_style_radius.h"
 #include "utils/rc_manager.h"
+#include "window/themes/window_theme.h"
+
+#include <QtGui/QFontDatabase>
+#include <QApplication>
+#include <QWidget>
 
 #ifdef Q_OS_WIN
 #include "ayu/utils/windows_utils.h"
@@ -35,13 +40,27 @@ void initLang() {
 }
 
 void initUiSettings() {
-	const auto &settings = AyuSettings::getInstance();
+	Window::Theme::InitializeFreshProfile();
+	const auto fontId = QFontDatabase::addApplicationFont(
+		u":/gui/fonts/JetBrainsMono-Regular.ttf"_q);
+	if (fontId < 0) {
+		LOG(("AyuGram: could not load the bundled Terminal font."));
+	}
+	applyProtectedUiSettings();
+}
 
+void applyProtectedUiSettings() {
+	const auto &settings = AyuSettings::getInstance();
 	AyuUiSettings::setMonoFont(settings.monoFont());
 	AyuUiSettings::setWideMultiplier(settings.wideMultiplier());
 	AyuUiSettings::setMaterialSwitches(settings.materialSwitches());
 	AyuUiSettings::setAvatarCorners(settings.avatarCorners());
 	Ui::SetAppliedBubbleRadius(settings.messageBubbleRadius());
+	if (QApplication::instance()) {
+		for (const auto widget : QApplication::allWidgets()) {
+			widget->update();
+		}
+	}
 }
 
 void initDatabase() {

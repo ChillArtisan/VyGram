@@ -18,6 +18,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "lang_auto_counts.h" // kKeysCount, kTagsCount.
 
+// AyuGram includes
+#include "ayu/ayu_lang.h"
+
+
 namespace Lang {
 namespace {
 
@@ -728,7 +732,8 @@ QString Instance::getNonDefaultValue(const QByteArray &key) const {
 		: QString();
 }
 
-void Instance::applyValue(const QByteArray &key, const QByteArray &value) {
+void Instance::applyValue(const QByteArray &key, const QByteArray &originalValue) {
+	const auto value = AyuLanguage::brandedValue(key, originalValue);
 	_nonDefaultValues[key] = value;
 	ParseKeyValue(key, value, [&](ushort key, QString &&value) {
 		_nonDefaultSet[key] = 1;

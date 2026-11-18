@@ -11,7 +11,7 @@ using "ui/widgets/widgets.style";
 using "ui/menu_icons.style";
 using "chat_helpers/chat_helpers.style"; // GroupCallUserpics
 
-msgMaxWidth: 430px;
+msgMaxWidth: 520px;
 msgFont: font(fsize);
 msgNameFont: semiboldFont;
 msgNameStyle: semiboldTextStyle;
@@ -19,11 +19,11 @@ msgServiceFont: semiboldFont;
 msgServiceNameFont: semiboldFont;
 msgServicePhotoWidth: 100px;
 msgServiceUserpicSuggestionPhotoWidth: 100px;
-msgDateFont: font(13px);
+msgDateFont: font("JetBrains Mono" 11px);
 msgMinWidth: 160px;
 msgPhotoSize: 33px;
 msgPhotoSkip: 40px;
-msgPadding: margins(11px, 8px, 11px, 8px);
+msgPadding: margins(14px, 10px, 14px, 10px);
 msgTagBadgePadding: margins(5px, -1px, 5px, 0px);
 msgTagBadgeBoostSkip: 2px;
 
@@ -50,7 +50,7 @@ tagInfoAdminsOnlyLabel: FlatLabel(defaultFlatLabel) {
 	}
 }
 
-msgMargin: margins(16px, 6px, 56px, 2px);
+msgMargin: margins(24px, 10px, 56px, 4px);
 msgMarginTopAttached: 0px;
 msgShadow: 2px;
 msgSelectionOffset: 30px;

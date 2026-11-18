@@ -392,22 +392,9 @@ void Domain::closeAccountWindows(not_null<Main::Account*> account) {
 }
 
 bool Domain::removePasscodeIfEmpty() {
-	if (_accounts.size() != 1 || _active.current()->sessionExists()) {
-		return false;
-	}
-	Local::reset();
-
-	// We completely logged out, remove the passcode if it was there.
-	if (Core::App().passcodeLocked()) {
-		Core::App().unlockPasscode();
-	}
-	if (!_local->hasLocalPasscode()) {
-		return false;
-	}
-	_local->setPasscode(QByteArray());
-	Core::App().settings().setSystemUnlockEnabled(false);
-	Core::App().saveSettingsDelayed();
-	return true;
+	// The encrypted local archive outlives account login sessions. Logging
+	// out must not remove the password protecting its profile key.
+	return false;
 }
 
 void Domain::removeRedundantAccounts() {

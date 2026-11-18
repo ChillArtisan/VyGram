@@ -84,6 +84,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
+#include "ayu/data/messages_storage.h"
 #include "ayu/features/filters/filters_controller.h"
 #include "ayu/features/message_shot/message_shot.h"
 #include "ayu/utils/telegram_helpers.h"
@@ -2893,6 +2894,9 @@ void HistoryItem::clearMediaAsExpired() {
 	unarmMediaDestroy();
 	const auto &settings = AyuSettings::getInstance();
 	if (settings.saveDeletedMessages()) {
+		if (isMessageSavable(this)) {
+			AyuMessages::addDeletedMessage(this);
+		}
 		RemoveComponents(HistoryServiceSelfDestruct::Bit());
 		_history->owner().requestItemViewRefresh(this);
 		return;

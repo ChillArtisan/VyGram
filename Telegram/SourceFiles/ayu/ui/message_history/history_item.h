@@ -32,7 +32,8 @@ public:
 	OwnedItem(std::nullptr_t = nullptr);
 	OwnedItem(
 		not_null<HistoryView::ElementDelegate*> delegate,
-		not_null<HistoryItem*> data);
+		not_null<HistoryItem*> data,
+		std::shared_ptr<void> mediaView = nullptr);
 	OwnedItem(const OwnedItem &other) = delete;
 	OwnedItem &operator=(const OwnedItem &other) = delete;
 	OwnedItem(OwnedItem &&other);
@@ -57,6 +58,7 @@ public:
 private:
 	HistoryItem *_data = nullptr;
 	std::unique_ptr<HistoryView::Element> _view;
+	std::shared_ptr<void> _mediaView;
 
 };
 
