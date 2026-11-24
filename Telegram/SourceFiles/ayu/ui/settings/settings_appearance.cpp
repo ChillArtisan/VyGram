@@ -7,6 +7,17 @@
 #include "ayu/ui/settings/settings_appearance.h"
 
 #include "lang_auto.h"
+#include "boxes/background_box.h"
+#include "core/application.h"
+#include "core/file_utilities.h"
+#include "settings/sections/settings_chat.h"
+
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QSaveFile>
+#include "ui/layers/generic_box.h"
+#include "ui/boxes/single_choice_box.h"
+#include "window/themes/window_theme_preview.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/ayu_ui_settings.h"
 #include "ayu/ui/boxes/font_selector.h"
@@ -236,44 +247,333 @@ void BuildAppearance(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	ayu.addSectionDivider();
 }
 
-void BuildTerminalDesign(SectionBuilder &builder) {
+void ExportGraphiteAppearance(not_null<Window::SessionController*> controller) {
+	const auto &settings = AyuSettings::getInstance();
+	const auto options = QJsonObject{
+		{ u"version"_q, 1 },
+		{ u"preset"_q, Window::Theme::IsColdSteelTheme() ? u"cold-steel"_q
+			: Window::Theme::IsTerminalTheme() ? u"graphite"_q : u"custom"_q },
+		{ u"graphiteThemeActive"_q, Window::Theme::IsTerminalTheme() },
+		{ u"graphiteNavLabels"_q, settings.graphiteNavLabels() },
+		{ u"graphiteCompactNav"_q, settings.graphiteCompactNav() },
+		{ u"graphiteForumMessages"_q, settings.graphiteForumMessages() },
+		{ u"graphiteMessageIds"_q, settings.graphiteMessageIds() },
+		{ u"graphiteGrainOpacity"_q, settings.graphiteGrainOpacity() },
+		{ u"graphiteChatSurface"_q, settings.graphiteChatSurface() },
+		{ u"graphiteNavSurface"_q, settings.graphiteNavSurface() },
+		{ u"graphiteListSurface"_q, settings.graphiteListSurface() },
+		{ u"graphiteAvatarSize"_q, settings.graphiteAvatarSize() },
+		{ u"graphiteMessageSize"_q, settings.graphiteMessageSize() },
+		{ u"avatarCorners"_q, settings.avatarCorners() },
+		{ u"messageBubbleRadius"_q, settings.messageBubbleRadius() },
+		{ u"removeMessageTail"_q, settings.removeMessageTail() },
+		{ u"monoFont"_q, settings.monoFont() },
+	};
+	FileDialog::GetWritePath(
+		Core::App().getFileDialogParent(),
+		tr::ayu_GraphiteExportAppearance(tr::now),
+		u"JSON (*.json)"_q,
+		u"VyGram-appearance.json"_q,
+		crl::guard(controller, [=](QString &&path) {
+			if (path.isEmpty()) {
+				return;
+			}
+			auto file = QSaveFile(path);
+			const auto bytes = QJsonDocument(options).toJson();
+			if (!file.open(QIODevice::WriteOnly)
+				|| file.write(bytes) != bytes.size()
+				|| !file.commit()) {
+				controller->showToast(tr::ayu_GraphiteExportFailed(tr::now));
+			} else {
+				controller->showToast(tr::ayu_GraphiteExported(tr::now));
+			}
+		}));
+}
+
+bool ApplyEmbeddedPreset(bool coldSteel) {
+	const auto path = coldSteel ? Window::Theme::ColdSteelThemePath() : Window::Theme::TerminalThemePath();
+	if (Window::Theme::IsNightMode()) {
+		if (!Window::Theme::Apply(path)) {
+			return false;
+		}
+	} else {
+		Window::Theme::ToggleNightMode(path);
+	}
+	if (!Window::Theme::IsTerminalTheme() || Window::Theme::IsColdSteelTheme() != coldSteel) {
+		return false;
+	}
+	Window::Theme::KeepApplied();
+	return true;
+}
+
+bool ImportAppearance(const QByteArray &bytes) {
+	const auto data = QJsonDocument::fromJson(bytes).object();
+	if (data.value(u"version"_q).toInt(-1) != 1) {
+		return false;
+	}
+	auto &settings = AyuSettings::getInstance();
+	struct Flag { QString key; void (AyuSettings::*set)(bool); };
+	const auto flags = std::array{
+		Flag{ u"graphiteNavLabels"_q, &AyuSettings::setGraphiteNavLabels },
+		Flag{ u"graphiteCompactNav"_q, &AyuSettings::setGraphiteCompactNav },
+		Flag{ u"graphiteForumMessages"_q, &AyuSettings::setGraphiteForumMessages },
+		Flag{ u"graphiteMessageIds"_q, &AyuSettings::setGraphiteMessageIds },
+		Flag{ u"removeMessageTail"_q, &AyuSettings::setRemoveMessageTail },
+	};
+	struct Range { QString key; int min, max; void (AyuSettings::*set)(int); };
+	const auto ranges = std::array{
+		Range{ u"avatarCorners"_q, 0, AyuUiSettings::kMaxAvatarCorners, &AyuSettings::setAvatarCorners },
+		Range{ u"messageBubbleRadius"_q, 0, 16, &AyuSettings::setMessageBubbleRadius },
+		Range{ u"graphiteGrainOpacity"_q, 0, 10, &AyuSettings::setGraphiteGrainOpacity },
+		Range{ u"graphiteChatSurface"_q, 0, 4, &AyuSettings::setGraphiteChatSurface },
+		Range{ u"graphiteNavSurface"_q, 0, 4, &AyuSettings::setGraphiteNavSurface },
+		Range{ u"graphiteListSurface"_q, 0, 4, &AyuSettings::setGraphiteListSurface },
+		Range{ u"graphiteAvatarSize"_q, 32, 56, &AyuSettings::setGraphiteAvatarSize },
+		Range{ u"graphiteMessageSize"_q, 12, 20, &AyuSettings::setGraphiteMessageSize },
+	};
+	for (const auto &flag : flags) {
+		if (!data.value(flag.key).isBool()) {
+			return false;
+		}
+	}
+	for (const auto &range : ranges) {
+		// Earlier v1 profiles lacked the optional Graphite appearance controls.
+		if (!data.contains(range.key) && range.key.startsWith(u"graphite"_q)) {
+			continue;
+		}
+		const auto value = data.value(range.key).toInt(-1);
+		if (value < range.min || value > range.max) {
+			return false;
+		}
+	}
+	const auto font = data.value(u"monoFont"_q);
+	if (!font.isString() || font.toString().size() > 128) {
+		return false;
+	}
+	const auto preset = data.value(u"preset"_q);
+	if (!preset.isUndefined() && (!preset.isString()
+		|| (preset != u"graphite"_q && preset != u"cold-steel"_q && preset != u"custom"_q))) {
+		return false;
+	}
+	const auto cold = (preset == u"cold-steel"_q);
+	const auto graphite = (preset == u"graphite"_q)
+		|| (preset.isUndefined() && data.value(u"graphiteThemeActive"_q).toBool());
+	if ((cold || graphite)
+		&& (!Window::Theme::IsTerminalTheme() || Window::Theme::IsColdSteelTheme() != cold)
+		&& !ApplyEmbeddedPreset(cold)) {
+		return false;
+	}
+	for (const auto &flag : flags) {
+		(settings.*flag.set)(data.value(flag.key).toBool());
+	}
+	for (const auto &range : ranges) {
+		if (data.contains(range.key)) {
+			(settings.*range.set)(data.value(range.key).toInt());
+		}
+	}
+	settings.setMonoFont(font.toString());
+	Ui::SetAppliedBubbleRadius(settings.messageBubbleRadius());
+	return true;
+}
+
+void ImportGraphiteAppearance(not_null<Window::SessionController*> controller) {
+	FileDialog::GetOpenPath(
+		Core::App().getFileDialogParent(),
+		tr::ayu_GraphiteImportAppearance(tr::now),
+		u"JSON (*.json)"_q,
+		crl::guard(controller, [=](FileDialog::OpenResult &&result) {
+			if (result.paths.isEmpty() && result.remoteContent.isEmpty()) {
+				return;
+			}
+			constexpr auto limit = 64 * 1024;
+			auto bytes = std::move(result.remoteContent);
+			if (bytes.isEmpty() && !result.paths.isEmpty()) {
+				auto file = QFile(result.paths.front());
+				if (file.open(QIODevice::ReadOnly)) {
+					bytes = file.read(limit + 1);
+				}
+			}
+			const auto success = (bytes.size() <= limit) && ImportAppearance(bytes);
+			controller->showToast(success
+				? tr::ayu_GraphiteImported(tr::now)
+				: tr::ayu_GraphiteImportFailed(tr::now));
+		}));
+}
+
+void GraphitePreview(not_null<Ui::GenericBox*> box) {
+	box->setTitle(tr::ayu_GraphitePreview());
+	box->setWidth(st::boxWideWidth);
+	const auto preview = Window::Theme::GeneratePreview({}, Window::Theme::IsColdSteelTheme()
+		? Window::Theme::ColdSteelThemePath() : Window::Theme::TerminalThemePath());
+	if (!preview.isNull()) {
+		const auto picture = box->addRow(object_ptr<Ui::RpWidget>(box));
+		picture->widthValue() | rpl::on_next([=](int width) {
+			picture->resize(width, width * preview.height() / preview.width());
+		}, picture->lifetime());
+		picture->paintRequest() | rpl::on_next([=] {
+			auto painter = QPainter(picture);
+			painter.setRenderHint(QPainter::SmoothPixmapTransform);
+			painter.drawImage(picture->rect(), preview);
+		}, picture->lifetime());
+	}
+	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+}
+
+void AddSurfaceChoice(
+		SectionBuilder &builder,
+		QString id,
+		rpl::producer<QString> title,
+		int (AyuSettings::*get)() const,
+		rpl::producer<int> (AyuSettings::*values)() const,
+		void (AyuSettings::*set)(int)) {
+	const auto settings = &AyuSettings::getInstance();
+	const auto options = std::vector<QString>{
+		tr::ayu_GraphitePlain(tr::now),
+		tr::ayu_GraphiteGrain(tr::now),
+		tr::ayu_GraphiteTopo(tr::now),
+		tr::ayu_GraphiteNocturnal(tr::now),
+		tr::ayu_GraphiteGrid(tr::now),
+	};
+	const auto controller = builder.controller();
+	const auto caption = rpl::duplicate(title) | rpl::take(1);
+	builder.addButton({
+		.id = std::move(id),
+		.title = std::move(title),
+		.st = &st::settingsButtonNoIcon,
+		.label = (settings->*values)() | rpl::map([=](int value) { return options[value]; }),
+		.onClick = [=] {
+			controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+				SingleChoiceBox(box, {
+					.title = rpl::duplicate(caption),
+					.options = options,
+					.initialSelection = (settings->*get)(),
+					.callback = [=](int index) { (settings->*set)(index); },
+				});
+			}));
+		},
+	});
+}
+
+void BuildTerminalDesign(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	const auto controller = builder.controller();
 	builder.addSubsectionTitle(tr::lng_settings_theme_terminal());
+	const auto choosePreset = [=](bool cold) {
+		const auto apply = crl::guard(controller, [=] {
+			if (!ApplyEmbeddedPreset(cold)) {
+				return;
+			}
+			auto &settings = AyuSettings::getInstance();
+			settings.setMessageBubbleRadius(2);
+			settings.setRemoveMessageTail(true);
+			settings.setAvatarCorners(6);
+			settings.setSingleCornerRadius(true);
+			settings.setMonoFont(u"JetBrains Mono"_q);
+			Ui::SetAppliedBubbleRadius(2);
+		});
+		if (Window::Theme::IsNightMode()) {
+			apply();
+		} else {
+			Window::Theme::ToggleNightModeWithConfirmation(&controller->window(), apply);
+		}
+	};
 	builder.addButton({
 		.id = u"ayu/terminalDesign"_q,
 		.title = tr::lng_settings_theme_terminal_apply(),
+		.icon = { &st::menuIconPalette },
+		.onClick = [=] { choosePreset(false); },
+	});
+	builder.addButton({
+		.id = u"ayu/coldSteel"_q,
+		.title = tr::ayu_GraphiteApplyColdSteel(),
+		.icon = { &st::menuIconPalette },
+		.onClick = [=] { choosePreset(true); },
+	});
+	ayu.addSettingToggle({
+		.id = u"ayu/graphiteNavLabels"_q,
+		.title = tr::ayu_GraphiteNavLabels(),
+		.getter = &AyuSettings::graphiteNavLabels,
+		.setter = &AyuSettings::setGraphiteNavLabels,
+	});
+	ayu.addSettingToggle({
+		.id = u"ayu/graphiteCompactNav"_q,
+		.title = tr::ayu_GraphiteCompactNav(),
+		.getter = &AyuSettings::graphiteCompactNav,
+		.setter = &AyuSettings::setGraphiteCompactNav,
+	});
+	ayu.addSettingToggle({
+		.id = u"ayu/graphiteForumMessages"_q,
+		.title = tr::ayu_GraphiteForumMessages(),
+		.getter = &AyuSettings::graphiteForumMessages,
+		.setter = &AyuSettings::setGraphiteForumMessages,
+	});
+	ayu.addSettingToggle({
+		.id = u"ayu/graphiteMessageIds"_q,
+		.title = tr::ayu_GraphiteMessageIds(),
+		.getter = &AyuSettings::graphiteMessageIds,
+		.setter = &AyuSettings::setGraphiteMessageIds,
+	});
+	AddSurfaceChoice(builder, u"ayu/graphiteChatSurface"_q, tr::ayu_GraphiteChatSurface(),
+		&AyuSettings::graphiteChatSurface, &AyuSettings::graphiteChatSurfaceValue, &AyuSettings::setGraphiteChatSurface);
+	AddSurfaceChoice(builder, u"ayu/graphiteNavSurface"_q, tr::ayu_GraphiteNavSurface(),
+		&AyuSettings::graphiteNavSurface, &AyuSettings::graphiteNavSurfaceValue, &AyuSettings::setGraphiteNavSurface);
+	AddSurfaceChoice(builder, u"ayu/graphiteListSurface"_q, tr::ayu_GraphiteListSurface(),
+		&AyuSettings::graphiteListSurface, &AyuSettings::graphiteListSurfaceValue, &AyuSettings::setGraphiteListSurface);
+	ayu.addSlider({
+		.id = u"ayu/graphiteMessageSize"_q,
+		.title = tr::ayu_GraphiteMessageSize(),
+		.steps = 9,
+		.current = AyuSettings::getInstance().graphiteMessageSize(),
+		.indexToValue = [](int i) { return i + 12; },
+		.onChanged = [](int value) { AyuSettings::getInstance().setGraphiteMessageSize(value); },
+		.formatLabel = [](int value) { return QString::number(value) + u" px"_q; },
+	});
+	ayu.addSlider({
+		.id = u"ayu/graphiteAvatarSize"_q,
+		.title = tr::ayu_GraphiteAvatarSize(),
+		.steps = 25,
+		.current = AyuSettings::getInstance().graphiteAvatarSize(),
+		.indexToValue = [](int i) { return i + 32; },
+		.onChanged = [](int value) { AyuSettings::getInstance().setGraphiteAvatarSize(value); },
+		.formatLabel = [](int value) { return QString::number(value) + u" px"_q; },
+	});
+	ayu.addSlider({
+		.id = u"ayu/graphiteGrainOpacity"_q,
+		.title = tr::ayu_GraphiteGrainOpacity(),
+		.steps = 11,
+		.current = AyuSettings::getInstance().graphiteGrainOpacity(),
+		.indexToValue = [](int i) { return i + 0; },
+		.onChanged = [](int value) { AyuSettings::getInstance().setGraphiteGrainOpacity(value); },
+		.formatLabel = [](int value) { return QString::number(value) + u"%"_q; },
+	});
+	builder.addButton({
+		.id = u"ayu/graphiteWallpaper"_q,
+		.title = tr::lng_settings_section_background(),
 		.st = &st::settingsButtonNoIcon,
-		.onClick = [=] {
-			const auto apply = crl::guard(controller, [=] {
-				const auto path = Window::Theme::TerminalThemePath();
-				if (Window::Theme::IsNightMode()) {
-					if (!Window::Theme::Apply(path)) {
-						return;
-					}
-				} else {
-					Window::Theme::ToggleNightMode(path);
-				}
-				if (!Window::Theme::IsTerminalTheme()) {
-					return;
-				}
-				Window::Theme::KeepApplied();
-				auto &settings = AyuSettings::getInstance();
-				settings.setMessageBubbleRadius(2);
-				settings.setRemoveMessageTail(true);
-				settings.setAvatarCorners(2);
-				settings.setSingleCornerRadius(true);
-				settings.setMonoFont(u"JetBrains Mono"_q);
-				Ui::SetAppliedBubbleRadius(2);
-				ShowRestartPrompt(controller);
-			});
-			if (Window::Theme::IsNightMode()) {
-				apply();
-			} else {
-				Window::Theme::ToggleNightModeWithConfirmation(
-					&controller->window(),
-					apply);
-			}
-		},
+		.onClick = [=] { controller->show(Box<BackgroundBox>(controller)); },
+	});
+	builder.addButton({
+		.id = u"ayu/graphiteAppearance"_q,
+		.title = tr::lng_settings_theme_settings(),
+		.st = &st::settingsButtonNoIcon,
+		.onClick = [=] { controller->showSettings(ChatId()); },
+	});
+	builder.addButton({
+		.id = u"ayu/graphitePreview"_q,
+		.title = tr::ayu_GraphitePreview(),
+		.st = &st::settingsButtonNoIcon,
+		.onClick = [=] { controller->show(Box(GraphitePreview)); },
+	});
+	builder.addButton({
+		.id = u"ayu/graphiteImport"_q,
+		.title = tr::ayu_GraphiteImportAppearance(),
+		.st = &st::settingsButtonNoIcon,
+		.onClick = [=] { ImportGraphiteAppearance(controller); },
+	});
+	builder.addButton({
+		.id = u"ayu/graphiteExportAppearance"_q,
+		.title = tr::ayu_GraphiteExportAppearance(),
+		.st = &st::settingsButtonNoIcon,
+		.onClick = [=] { ExportGraphiteAppearance(controller); },
 	});
 	builder.addDividerText(tr::lng_settings_theme_terminal_description());
 	builder.addSkip();
@@ -431,7 +731,7 @@ const auto kMeta = BuildHelper({
 	auto ayu = AyuSectionBuilder(builder);
 
 	builder.addSkip();
-	BuildTerminalDesign(builder);
+	BuildTerminalDesign(builder, ayu);
 	BuildAppIcon(builder, ayu);
 	BuildAvatarCorners(builder, ayu);
 	BuildAppearance(builder, ayu);

@@ -25,6 +25,9 @@ namespace HistoryView::Controls {
 
 extern const char kOptionMacCmdReplyImmediately[];
 
+[[nodiscard]] int TerminalComposerInset(int width);
+void PaintTerminalComposer(QPainter &p, QRect row, QRect field, bool focused);
+
 struct MessageToEdit {
 	FullMsgId fullId;
 	Api::SendOptions options;

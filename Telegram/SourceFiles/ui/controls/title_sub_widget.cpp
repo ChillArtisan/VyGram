@@ -22,6 +22,7 @@ not_null<RpWidget*> CreateTitleSubWidget(
 		rpl::producer<style::align> align,
 		rpl::producer<int> top) {
 	const auto result = CreateChild<RpWidget>(parent.get());
+	result->setAttribute(Qt::WA_TransparentForMouseEvents);
 	result->show();
 
 	struct State {

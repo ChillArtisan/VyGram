@@ -63,4 +63,13 @@ set(desktop_app_skip_libs
 )
 
 add_subdirectory(cmake)
+
+option(VYGRAM_LOCAL_INCREMENTAL_LINK "Use incremental MSVC linking for VyGram Debug" OFF)
+if (VYGRAM_LOCAL_INCREMENTAL_LINK AND CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    get_target_property(vygram_link_options common_options INTERFACE_LINK_OPTIONS)
+    list(TRANSFORM vygram_link_options REPLACE "^/INCREMENTAL:NO$"
+        "$<IF:$<AND:$<CONFIG:Debug>,$<STREQUAL:$<TARGET_PROPERTY:NAME>,Telegram>>,/INCREMENTAL,/INCREMENTAL:NO>")
+    set_property(TARGET common_options PROPERTY INTERFACE_LINK_OPTIONS "${vygram_link_options}")
+endif()
+
 add_subdirectory(Telegram)

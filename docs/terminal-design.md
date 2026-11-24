@@ -77,8 +77,17 @@ already held in process memory. The password and encrypted archive changes have
 separate validation and do not make every existing Telegram file password
 protected.
 
-This is the first appearance implementation, not a completed redesign of every
-settings screen, message type, popup or platform title bar.
+## Graphite interface
+
+Terminal uses the Graphite palette, IBM Plex Sans and the bundled grain.
+The main window has a section rail with wide and compact layouts, a chat-list
+heading and amber selection stripe, and a framed composer. Forum records
+group consecutive messages by author and can show real message IDs when
+space permits. The command palette opens with Ctrl+K and searches chats
+and client actions. Command history is stored per account in local settings.
+
+Native authorization, media, notification, and call screens use the same
+palette and continue to use their existing workflows.
 
 ## Assets and validation
 
@@ -91,8 +100,8 @@ git diff --check
 ```
 
 The packager uses only Python's standard library and writes a deterministic ZIP
-with the current palette and a generated solid 32×32 PNG. JetBrains Mono Regular
-is bundled locally with its SIL Open Font License in `Telegram/Resources/fonts`.
+with the current palette and the static grain PNG. IBM Plex Sans and JetBrains
+Mono are bundled with their SIL Open Font Licenses in `Telegram/Resources/fonts`.
 Font source: https://github.com/JetBrains/JetBrainsMono/tree/master/fonts/ttf
 
 Asset checks cover palette completeness, contrast of primary text/control

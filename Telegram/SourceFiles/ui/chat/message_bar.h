@@ -29,6 +29,7 @@ struct MessageBarContent {
 	Text::MarkedContext context;
 	std::shared_ptr<DynamicImage> preview;
 	style::margins margins;
+	bool showPinIcon = false;
 };
 
 class MessageBar final {

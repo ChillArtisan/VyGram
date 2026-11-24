@@ -55,6 +55,9 @@ struct TopicJumpCache {
 };
 
 struct PaintContext {
+	QRect graphiteSurfaceBounds;
+	int graphiteSurface = 0;
+	int graphiteGrain = 0;
 	RightButton *rightButton = nullptr;
 	std::vector<QImage*> *chatsFilterTags = nullptr;
 	QuickActionContext *quickActionContext = nullptr;

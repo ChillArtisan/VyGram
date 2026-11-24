@@ -29,6 +29,7 @@ QString appIcoPath();
 QImage loadPreview(const QString& name);
 
 QString currentAppLogoName();
+const QImage &brandLogo();
 QImage currentAppLogo();
 QImage currentAppLogoPad();
 

@@ -1009,6 +1009,78 @@ void AyuSettings::setHideNotificationBadge(bool val) {
 	save();
 }
 
+void AyuSettings::setGraphiteNavLabels(bool val) {
+	if (_graphiteNavLabels.current() == val) return;
+	_graphiteNavLabels = val;
+	save();
+}
+
+void AyuSettings::setGraphiteCompactNav(bool val) {
+	if (_graphiteCompactNav.current() == val) return;
+	_graphiteCompactNav = val;
+	save();
+}
+
+void AyuSettings::setGraphiteForumMessages(bool val) {
+	if (_graphiteForumMessages.current() == val) return;
+	_graphiteForumMessages = val;
+	save();
+}
+
+void AyuSettings::setGraphiteMessageSize(int val) {
+	val = std::clamp(val, 12, 20);
+	if (_graphiteMessageSize.current() != val) {
+		_graphiteMessageSize = val;
+		save();
+	}
+}
+
+void AyuSettings::setGraphiteChatSurface(int val) {
+	val = std::clamp(val, 0, 4);
+	if (_graphiteChatSurface.current() != val) {
+		_graphiteChatSurface = val;
+		save();
+	}
+}
+
+void AyuSettings::setGraphiteNavSurface(int val) {
+	val = std::clamp(val, 0, 4);
+	if (_graphiteNavSurface.current() != val) {
+		_graphiteNavSurface = val;
+		save();
+	}
+}
+
+void AyuSettings::setGraphiteListSurface(int val) {
+	val = std::clamp(val, 0, 4);
+	if (_graphiteListSurface.current() != val) {
+		_graphiteListSurface = val;
+		save();
+	}
+}
+
+void AyuSettings::setGraphiteAvatarSize(int val) {
+	val = std::clamp(val, 32, 56);
+	if (_graphiteAvatarSize.current() != val) {
+		_graphiteAvatarSize = val;
+		save();
+	}
+}
+
+void AyuSettings::setGraphiteGrainOpacity(int val) {
+	val = std::clamp(val, 0, 10);
+	if (_graphiteGrainOpacity.current() != val) {
+		_graphiteGrainOpacity = val;
+		save();
+	}
+}
+
+void AyuSettings::setGraphiteMessageIds(bool val) {
+	if (_graphiteMessageIds.current() == val) return;
+	_graphiteMessageIds = val;
+	save();
+}
+
 void AyuSettings::setHideAllChatsFolder(bool val) {
 	if (_hideAllChatsFolder.current() == val) return;
 	_hideAllChatsFolder = val;
@@ -1210,6 +1282,16 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"monoFont", s._monoFont.current()},
 		{"hideNotificationCounters", s._hideNotificationCounters.current()},
 		{"hideNotificationBadge", s._hideNotificationBadge.current()},
+		{"graphiteNavLabels", s._graphiteNavLabels.current()},
+		{"graphiteCompactNav", s._graphiteCompactNav.current()},
+		{"graphiteForumMessages", s._graphiteForumMessages.current()},
+		{"graphiteMessageSize", s._graphiteMessageSize.current()},
+		{"graphiteChatSurface", s._graphiteChatSurface.current()},
+		{"graphiteNavSurface", s._graphiteNavSurface.current()},
+		{"graphiteListSurface", s._graphiteListSurface.current()},
+		{"graphiteAvatarSize", s._graphiteAvatarSize.current()},
+		{"graphiteGrainOpacity", s._graphiteGrainOpacity.current()},
+		{"graphiteMessageIds", s._graphiteMessageIds.current()},
 		{"hideAllChatsFolder", s._hideAllChatsFolder.current()},
 		{"channelBottomButton", s._channelBottomButton.current()},
 		{"quickAdminShortcuts", s._quickAdminShortcuts.current()},
@@ -1314,6 +1396,16 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._monoFont = j.value("monoFont", defaults._monoFont.current());
 	s._hideNotificationCounters = j.value("hideNotificationCounters", defaults._hideNotificationCounters.current());
 	s._hideNotificationBadge = j.value("hideNotificationBadge", defaults._hideNotificationBadge.current());
+	s._graphiteNavLabels = j.value("graphiteNavLabels", defaults._graphiteNavLabels.current());
+	s._graphiteCompactNav = j.value("graphiteCompactNav", defaults._graphiteCompactNav.current());
+	s._graphiteForumMessages = j.value("graphiteForumMessages", defaults._graphiteForumMessages.current());
+	s._graphiteMessageSize = std::clamp(j.value("graphiteMessageSize", defaults._graphiteMessageSize.current()), 12, 20);
+	s._graphiteChatSurface = std::clamp(j.value("graphiteChatSurface", defaults._graphiteChatSurface.current()), 0, 4);
+	s._graphiteNavSurface = std::clamp(j.value("graphiteNavSurface", defaults._graphiteNavSurface.current()), 0, 4);
+	s._graphiteListSurface = std::clamp(j.value("graphiteListSurface", defaults._graphiteListSurface.current()), 0, 4);
+	s._graphiteAvatarSize = std::clamp(j.value("graphiteAvatarSize", defaults._graphiteAvatarSize.current()), 32, 56);
+	s._graphiteGrainOpacity = std::clamp(j.value("graphiteGrainOpacity", defaults._graphiteGrainOpacity.current()), 0, 10);
+	s._graphiteMessageIds = j.value("graphiteMessageIds", defaults._graphiteMessageIds.current());
 	s._hideAllChatsFolder = j.value("hideAllChatsFolder", defaults._hideAllChatsFolder.current());
 	s._channelBottomButton = j.value("channelBottomButton", defaults._channelBottomButton.current());
 	s._quickAdminShortcuts = j.value("quickAdminShortcuts", defaults._quickAdminShortcuts.current());

@@ -40,6 +40,7 @@ class ContactStatus;
 } // namespace HistoryView
 
 namespace Ui {
+class FlatLabel;
 class AbstractButton;
 class IconButton;
 class PopupMenu;
@@ -333,6 +334,10 @@ private:
 	std::unique_ptr<Ui::AbstractButton> _frozenAccountBar;
 
 	object_ptr<Ui::RpWidget> _searchControls;
+	object_ptr<Ui::FlatLabel> _chatsHeading;
+	object_ptr<Ui::IconButton> _newChat;
+	object_ptr<Ui::RpWidget> _searchGlass;
+	object_ptr<Ui::AbstractButton> _paletteShortcut;
 	object_ptr<HistoryView::TopBarWidget> _subsectionTopBar = { nullptr };
 	struct {
 		object_ptr<Ui::IconButton> toggle;

@@ -15,11 +15,16 @@ namespace AyuMessages {
 [[nodiscard]] MTPMessageMedia restoreMedia(
 	const AyuMessageBase &message,
 	not_null<Main::Session*> session,
-	std::shared_ptr<void> &mediaView);
+	std::shared_ptr<void> &mediaView,
+	bool chatSnapshot = false);
 
 void addEditedMessage(not_null<HistoryItem *> item);
 std::vector<AyuMessageBase> getEditedMessages(not_null<HistoryItem*> item, ID minId, ID maxId, int totalLimit);
 bool hasRevisions(not_null<HistoryItem*> item);
+
+[[nodiscard]] bool isChatArchiveEnabled(not_null<PeerData*> peer);
+[[nodiscard]] bool setChatArchiveEnabled(not_null<PeerData*> peer, bool enabled);
+void archiveChatMessage(not_null<HistoryItem*> item);
 
 void addDeletedMessage(not_null<HistoryItem*> item);
 std::vector<AyuMessageBase> getDeletedMessages(not_null<PeerData*> peer, ID topicId, ID minId, ID maxId, int totalLimit, const QString &searchQuery = QString());

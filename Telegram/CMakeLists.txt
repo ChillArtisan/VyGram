@@ -154,6 +154,19 @@ set(ayugram_files
         ayu/features/send_templates/send_templates_mp4.h
         ayu/ui/boxes/send_templates_box.cpp
         ayu/ui/boxes/send_templates_box.h
+        ayu/ui/boxes/command_palette_box.h
+        ayu/ui/boxes/command_palette_box.cpp
+        ayu/ui/boxes/chat_archive_box.cpp
+        ayu/ui/boxes/chat_archive_box.h
+        ayu/ui/boxes/chat_labels_box.cpp
+        ayu/ui/boxes/chat_labels_box.h
+        ayu/ui/boxes/chat_privacy_box.cpp
+        ayu/ui/boxes/chat_privacy_box.h
+        ayu/features/chat_privacy.cpp
+        ayu/features/chat_privacy.h
+        ayu/features/chat_privacy_policy.h
+        ayu/ui/boxes/protection_status_box.cpp
+        ayu/ui/boxes/protection_status_box.h
         ayu/ui/settings/ayu_builder.cpp
         ayu/ui/settings/ayu_builder.h
         ayu/ui/settings/settings_appearance.cpp

@@ -8,6 +8,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_filters_menu.h"
 
 #include "menu/menu_mark_as_read.h"
+#include "boxes/peer_list_controllers.h"
+#include "data/data_folder.h"
+#include "history/history.h"
+#include "history/history_unread_things.h"
+#include "info/downloads/info_downloads_widget.h"
+#include "info/info_memento.h"
+#include "window/themes/window_theme.h"
 #include "mainwindow.h"
 #include "window/window_session_controller.h"
 #include "window/window_controller.h"
@@ -52,10 +59,116 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
+#include "ayu/ui/graphite_surface.h"
 
 
 namespace Window {
 namespace {
+
+void PaintRailButton(
+		not_null<Ui::AbstractButton*> button,
+		const QString &label,
+		const style::icon &icon,
+		bool selected,
+		const QString &badge = {}) {
+	auto p = QPainter(button.get());
+	const auto width = button->width();
+	const auto height = button->height();
+	const auto compact = width < style::ConvertScale(120);
+	const auto padding = style::ConvertScale(12);
+	const auto hot = button->isOver() || button->isDown() || button->hasFocus();
+	if (selected || hot) {
+		p.fillRect(button->rect().adjusted(padding / 2, 2, -padding / 2, -2),
+			selected ? st::dialogsBgActive : st::dialogsBgOver);
+		p.fillRect(0, 2, style::ConvertScale(2), height - 4, st::windowActiveTextFg);
+	}
+	const auto x = compact ? (width - icon.width()) / 2 : padding;
+	icon.paint(p, x, (height - icon.height()) / 2, width,
+		(hot || selected) ? st::windowActiveTextFg->c : st::windowFg->c);
+	p.setFont(st::normalFont);
+	const auto badgeWidth = badge.isEmpty() ? 0 : st::normalFont->width(badge) + padding / 2;
+	if (!compact) {
+		const auto left = x + icon.width() + padding;
+		p.setPen(selected ? st::windowActiveTextFg->c : st::windowFg->c);
+		const auto bounds = button->rect().adjusted(left, 0, -padding - badgeWidth, 0);
+		p.drawText(bounds, Qt::AlignVCenter | Qt::AlignLeft,
+			p.fontMetrics().elidedText(label, Qt::ElideRight, bounds.width()));
+	}
+	if (!badge.isEmpty()) {
+		p.setPen(st::windowActiveTextFg->c);
+		const auto rect = button->rect().adjusted(0, 0, compact ? -2 : -padding, 0);
+		p.drawText(rect, Qt::AlignRight | (compact ? Qt::AlignTop : Qt::AlignVCenter), badge);
+	}
+}
+
+class RailButton final : public Ui::AbstractButton {
+public:
+	RailButton(QWidget *parent, QString title, const style::icon &icon)
+	: AbstractButton(parent), _title(std::move(title)), _icon(icon) {
+		setAccessibleName(_title);
+		setToolTip(_title);
+		setFocusPolicy(Qt::StrongFocus);
+		setPointerCursor(true);
+	}
+
+	void setSelected(bool selected) {
+		if (_selected != selected) {
+			_selected = selected;
+			update();
+		}
+	}
+private:
+	int resizeGetHeight(int) override {
+		return style::ConvertScale(AyuSettings::getInstance().graphiteCompactNav() ? 36 : 48);
+	}
+	void paintEvent(QPaintEvent *) override {
+		PaintRailButton(this, _title, _icon, _selected);
+	}
+	bool _selected = false;
+	const QString _title;
+	const style::icon &_icon;
+};
+
+class RailChats final : public ChatsListBoxController {
+public:
+	enum class Kind { Groups, Channels, Activity };
+	RailChats(not_null<SessionController*> window, Kind kind)
+	: ChatsListBoxController(&window->session()), _window(window), _kind(kind) {
+	}
+	Main::Session &session() const override {
+		return _window->session();
+	}
+	void rowClicked(not_null<PeerListRow*> row) override {
+		const auto window = _window;
+		const auto peer = row->peer();
+		window->hideLayer();
+		window->showPeerHistory(peer);
+	}
+private:
+	std::unique_ptr<Row> createRow(not_null<History*> history) override {
+		const auto peer = history->peer;
+		const auto matches = (_kind == Kind::Activity)
+			? (history->unreadMentions().has()
+				|| history->unreadReactions().has()
+				|| history->unreadCount() > 0)
+			: (_kind == Kind::Channels)
+			? peer->isBroadcast()
+			: (peer->isChat() || peer->isMegagroup());
+		return matches ? std::make_unique<Row>(history) : nullptr;
+	}
+	QString emptyBoxText() const override {
+		return tr::lng_bot_chats_not_found(tr::now);
+	}
+	void prepareViewHook() override {
+		delegate()->peerListSetTitle((_kind == Kind::Activity)
+			? tr::lng_sr_chat_column_activity()
+			: (_kind == Kind::Channels)
+			? tr::lng_filters_type_channels()
+			: tr::lng_filters_type_groups());
+	}
+	const not_null<SessionController*> _window;
+	const Kind _kind;
+};
 
 // The folder tabs container, exposed as a list to screen readers.
 class TabListLayout final : public Ui::VerticalLayout {
@@ -97,13 +210,26 @@ public:
 	}
 };
 
+void ShowRailChats(not_null<SessionController*> window, RailChats::Kind kind) {
+	window->show(Box<PeerListBox>(
+		std::make_unique<RailChats>(window, kind),
+		[](not_null<PeerListBox*> box) {
+			box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+		}));
+}
+
 } // namespace
+
+void ShowGraphiteActivity(not_null<SessionController*> window) {
+	ShowRailChats(window, RailChats::Kind::Activity);
+}
 
 FiltersMenu::FiltersMenu(
 	not_null<Ui::RpWidget*> parent,
 	not_null<SessionController*> session)
 : _session(session)
 , _parent(parent)
+, _graphite(Theme::IsTerminalTheme())
 , _outer(_parent)
 , _menu(&_outer, TextWithEntities(), st::windowFiltersMainMenu)
 , _scroll(&_outer)
@@ -116,10 +242,73 @@ FiltersMenu::FiltersMenu(
 			_session->setActiveChatsFilter(_drag.filterId);
 		}
 	});
+	if (_graphite) {
+		_graphiteFolderStyle = std::make_unique<style::SideBarButton>(st::windowFiltersButton);
+		_graphiteFolderStyle->minHeight = style::ConvertScale(
+			AyuSettings::getInstance().graphiteCompactNav() ? 36 : 48);
+	}
 	setup();
 }
 
 FiltersMenu::~FiltersMenu() = default;
+
+int FiltersMenu::railWidth() const {
+	return _graphite
+		? style::ConvertScale((AyuSettings::getInstance().graphiteNavLabels()
+			&& _parent->width() >= style::ConvertScale(1100)) ? 168 : 64)
+		: st::windowFiltersWidth;
+}
+
+void FiltersMenu::setupGraphiteNavigation() {
+	const auto add = [=](QString title, const style::icon &icon, Fn<void()> handler) {
+		const auto button = _container->add(object_ptr<RailButton>(
+			_container, std::move(title), icon));
+		button->setClickedCallback(std::move(handler));
+		return button;
+	};
+	const auto chats = add(tr::lng_filters_all(tr::now), st::menuIconChats, [=] {
+		_session->closeFolder();
+		_session->setActiveChatsFilter(0);
+		_session->clearSectionStack();
+	});
+	add(tr::lng_menu_contacts(tr::now), st::menuIconUserShow, [=] {
+		_session->show(PrepareContactsBox(_session));
+	});
+	add(tr::lng_filters_type_groups(tr::now), st::menuIconGroups, [=] {
+		ShowRailChats(_session, RailChats::Kind::Groups);
+	});
+	add(tr::lng_filters_type_channels(tr::now), st::menuIconChannel, [=] {
+		ShowRailChats(_session, RailChats::Kind::Channels);
+	});
+	const auto archive = add(tr::lng_archived_name(tr::now), st::menuIconArchive, [=] {
+		_session->openFolder(_session->session().data().folder(Data::Folder::kId));
+	});
+	const auto saved = add(tr::lng_saved_messages(tr::now), st::menuIconSavedMessages, [=] {
+		_session->showPeerHistory(_session->session().user());
+	});
+	_folderHost = _container->add(object_ptr<Ui::VerticalLayout>(_container));
+	add(tr::lng_sr_chat_column_activity(tr::now), st::menuIconGroupReactions, [=] {
+		ShowGraphiteActivity(_session);
+	});
+	add(tr::lng_downloads_section(tr::now), st::menuIconDownload, [=] {
+		_session->showSection(Info::Downloads::Make(_session->session().user()));
+	});
+	rpl::combine(
+		_session->activeChatValue(),
+		_session->openedFolder().value(),
+		_session->activeChatsFilter()
+	) | rpl::on_next([=](Dialogs::Key key, Data::Folder *folder, FilterId filter) {
+		const auto isSaved = key.peer() == _session->session().user();
+		chats->setSelected(!folder && !filter && !isSaved);
+		archive->setSelected(folder != nullptr);
+		saved->setSelected(!folder && isSaved);
+	}, _outer.lifetime());
+	const auto settings = new RailButton(
+		&_outer, tr::lng_menu_settings(tr::now), st::menuIconSettings);
+	settings->setClickedCallback([=] { _session->showSettings(); });
+	settings->show();
+	_railSettings = settings;
+}
 
 void FiltersMenu::setup() {
 	setupDragAndDrop();
@@ -142,16 +331,49 @@ void FiltersMenu::setup() {
 		p.setPen(Qt::NoPen);
 		p.setBrush(st::windowFiltersButton.textBg);
 		p.drawRect(clip);
+		if (_graphite) {
+			const auto bottom = _railSettings ? _railSettings->y() : _outer.height();
+			const auto bounds = QRect(0, 0, _outer.width(), bottom);
+			const auto &settings = AyuSettings::getInstance();
+			Ui::PaintGraphiteSurface(p, bounds, clip,
+				settings.graphiteNavSurface(), settings.graphiteGrainOpacity());
+		}
 	}, _outer.lifetime());
 
-	_parent->heightValue(
-	) | rpl::on_next([=](int height) {
-		const auto width = st::windowFiltersWidth;
+	if (_graphite) {
+		setupGraphiteNavigation();
+		_menu.setAttribute(Qt::WA_OpaquePaintEvent, false);
+		base::install_event_filter(&_menu, [=](not_null<QEvent*> event) {
+			if (event->type() != QEvent::Paint) {
+				return base::EventFilterResult::Continue;
+			}
+			PaintRailButton(&_menu, _session->session().user()->name(),
+				st::menuIconProfile, false, _accountBadge);
+			return base::EventFilterResult::Cancel;
+		});
+		rpl::combine(
+			AyuSettings::getInstance().graphiteNavSurfaceValue(),
+			AyuSettings::getInstance().graphiteGrainOpacityValue()
+		) | rpl::on_next([=] { _outer.update(); }, _outer.lifetime());
+	}
+	_parent->sizeValue(
+	) | rpl::on_next([=](QSize size) {
+		const auto height = size.height();
+		const auto width = railWidth();
 		_outer.setGeometry({ 0, 0, width, height });
 		_menu.resizeToWidth(width);
-		_menu.move(0, 0);
-		_scroll.setGeometry(
-			{ 0, _menu.height(), width, height - _menu.height() });
+		const auto bottom = _railSettings
+			? style::ConvertScale(AyuSettings::getInstance().graphiteCompactNav() ? 36 : 48)
+			: 0;
+		if (_railSettings) {
+			_railSettings->setGeometry(0, height - bottom, width, bottom);
+			_menu.setGeometry(0, height - 2 * bottom, width, bottom);
+		} else {
+			_menu.move(0, 0);
+		}
+		const auto scrollTop = _graphite ? style::ConvertScale(8) : _menu.height();
+		const auto scrollBottom = _graphite ? _menu.y() : height;
+		_scroll.setGeometry({ 0, scrollTop, width, std::max(0, scrollBottom - scrollTop) });
 		_container->resizeToWidth(width);
 		_container->move(0, 0);
 	}, _outer.lifetime());
@@ -198,7 +420,7 @@ void FiltersMenu::setup() {
 			return;
 		}
 		_setup = prepareButton(
-			_container,
+			_folderHost ? _folderHost : _container.get(),
 			-1,
 			{ TextWithEntities{ tr::lng_filters_setup(tr::now) } },
 			Ui::FilterIcon::Edit);
@@ -249,7 +471,9 @@ void FiltersMenu::setupMainMenuIcon() {
 			icon = nullptr;
 		}
 
+		_accountBadge = icon ? QString::number(state.count) : QString();
 		_menu.setIconOverride(icon, icon);
+		_menu.update();
 	}, _outer.lifetime());
 }
 
@@ -360,6 +584,10 @@ void FiltersMenu::refresh() {
 	const auto &settings = AyuSettings::getInstance();
 
 	const auto filters = &_session->session().data().chatsFilters();
+	if (!filters->has() && _graphite && _list) {
+		_reorder->cancel();
+		_filters.clear();
+	}
 	if (!filters->has() || _ignoreRefresh) {
 		return;
 	}
@@ -374,11 +602,11 @@ void FiltersMenu::refresh() {
 	const auto maxLimit = (reorderAll ? 1 : 0)
 		+ Data::PremiumLimits(&_session->session()).dialogFiltersCurrent();
 	const auto premiumFrom = (reorderAll ? 0 : 1) + maxLimit;
-	if (!reorderAll && !settings.hideAllChatsFolder()) {
+	if (!_graphite && !reorderAll && !settings.hideAllChatsFolder()) {
 		_reorder->addPinnedInterval(0, 1);
 	}
 	_reorder->addPinnedInterval(
-		premiumFrom,
+		premiumFrom - (_graphite && !reorderAll ? 1 : 0),
 		std::max(1, int(filters->list().size()) - maxLimit));
 
 	// Remember which folder holds keyboard focus so the roving Tab-stop can be
@@ -396,7 +624,10 @@ void FiltersMenu::refresh() {
 	auto now = base::flat_map<int, base::unique_qptr<Ui::SideBarButton>>();
 	const auto &currentFilter = _session->activeChatsFilterCurrent();
 	for (const auto &filter : filters->list()) {
-		const auto nextIsLocked = (now.size() >= premiumFrom);
+		if (_graphite && !filter.id()) {
+			continue;
+		}
+		const auto nextIsLocked = (now.size() >= premiumFrom - (_graphite && !reorderAll ? 1 : 0));
 		if (nextIsLocked && (currentFilter == filter.id())) {
 			_session->setActiveChatsFilter(FilterId(0));
 		}
@@ -439,7 +670,7 @@ void FiltersMenu::refresh() {
 	// so we have to restore it.
 	_scroll.scrollToY(oldTop);
 
-	if (settings.hideAllChatsFolder()
+	if (!_graphite && settings.hideAllChatsFolder()
 		&& _session->widget()->sessionContent()) {
 		_session->setActiveChatsFilter(filters->lookupId(0));
 	}
@@ -451,10 +682,11 @@ void FiltersMenu::refresh() {
 }
 
 void FiltersMenu::setupList() {
-	_list = _container->add(object_ptr<TabListLayout>(_container));
+	const auto host = _folderHost ? _folderHost : _container.get();
+	_list = host->add(object_ptr<TabListLayout>(host));
 	_list->setAccessibleName(tr::lng_filters_title(tr::now));
 	_setup = prepareButton(
-		_container,
+		host,
 		-1,
 		{ TextWithEntities{ tr::lng_filters_setup(tr::now) } },
 		Ui::FilterIcon::Edit);
@@ -506,13 +738,14 @@ void FiltersMenu::updateFavorite() {
 }
 
 void FiltersMenu::createFavorite() {
+	const auto host = _folderHost ? _folderHost : _container.get();
 	_favorite = base::unique_qptr<Ui::SlideWrap<FolderFavoriteButton>>(
-		_container->insert(
-			_container->count() - 1,
+		host->insert(
+			host->count() - 1,
 			object_ptr<Ui::SlideWrap<FolderFavoriteButton>>(
-				_container,
+				host,
 				object_ptr<FolderFavoriteButton>(
-					_container,
+					host,
 					_session,
 					buttonStyle()))));
 	_favorite->toggle(false, anim::type::instant);
@@ -550,6 +783,9 @@ Ui::ChatsFiltersTabsMode FiltersMenu::tabsMode() const {
 
 const style::SideBarButton &FiltersMenu::buttonStyle() const {
 	using Mode = Ui::ChatsFiltersTabsMode;
+	if (_graphite) {
+		return *_graphiteFolderStyle;
+	}
 	switch (tabsMode()) {
 	case Mode::TextOnly: return st::windowFiltersButtonTextOnly;
 	case Mode::TextAndIcons: return st::windowFiltersButton;
@@ -599,7 +835,7 @@ base::unique_qptr<Ui::SideBarButton> FiltersMenu::prepareButton(
 	prepared->setLocked(locked);
 	prepared->setIsListItem(listItem);
 	prepared->setShowIcon(mode != Ui::ChatsFiltersTabsMode::TextOnly);
-	prepared->setShowText(mode != Ui::ChatsFiltersTabsMode::IconsOnly);
+	prepared->setShowText(!_graphite && mode != Ui::ChatsFiltersTabsMode::IconsOnly);
 	auto added = toBeginning
 		? container->insert(0, std::move(prepared))
 		: container->add(std::move(prepared));
@@ -612,6 +848,21 @@ base::unique_qptr<Ui::SideBarButton> FiltersMenu::prepareButton(
 		? icon
 		: Ui::FilterIcon::All);
 	raw->setIconOverride(icons.normal, icons.active);
+	auto badge = std::shared_ptr<QString>();
+	if (_graphite) {
+		badge = std::make_shared<QString>();
+		raw->setAttribute(Qt::WA_OpaquePaintEvent, false);
+		raw->setToolTip(nameText);
+		const auto glyph = locked ? &st::menuIconLock : icons.normal.get();
+		base::install_event_filter(raw, [=](not_null<QEvent*> event) {
+			if (event->type() != QEvent::Paint) {
+				return base::EventFilterResult::Continue;
+			}
+			PaintRailButton(raw, nameText, *glyph, id >= 0
+				&& _session->activeChatsFilterCurrent() == id, *badge);
+			return base::EventFilterResult::Cancel;
+		});
+	}
 	if (id >= 0) {
 		if (locked) {
 			// Surface a locked folder's premium-gated status and what pressing
@@ -646,6 +897,9 @@ base::unique_qptr<Ui::SideBarButton> FiltersMenu::prepareButton(
 				: (count > 999)
 				? "99+"
 				: QString::number(count);
+			if (badge) {
+				*badge = string;
+			}
 			raw->setBadge(string, includeMuted && (count == muted));
 			if (!locked) {
 				raw->setAccessibleName(count
@@ -837,6 +1091,31 @@ void FiltersMenu::applyReorder(
 
 	const auto filters = &_session->session().data().chatsFilters();
 	const auto &list = filters->list();
+	if (_graphite) {
+		auto order = std::vector<FilterId>();
+		auto visible = std::vector<FilterId>();
+		for (const auto &filter : list) {
+			order.push_back(filter.id());
+			if (filter.id()) {
+				visible.push_back(filter.id());
+			}
+		}
+		if (!base::in_range(oldPosition, 0, visible.size())
+			|| !base::in_range(newPosition, 0, visible.size())) {
+			return;
+		}
+		base::reorder(visible, oldPosition, newPosition);
+		auto i = visible.begin();
+		for (auto &id : order) {
+			if (id) {
+				id = *i++;
+			}
+		}
+		_ignoreRefresh = true;
+		filters->saveOrder(order);
+		_ignoreRefresh = false;
+		return;
+	}
 	if (!settings.hideAllChatsFolder() && !premium()) {
 		if (list[0].id() != FilterId()) {
 			filters->moveAllToFront();

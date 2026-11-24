@@ -35,6 +35,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "main/main_domain.h"
+#include "ayu/ui/ayu_logo.h"
 
 
 namespace Intro {
@@ -62,7 +63,7 @@ namespace {
 }
 
 [[nodiscard]] QColor QrActiveColor() {
-	return QColor(0x40, 0xA7, 0xE3); // Default windowBgActive.
+	return st::windowBgActive->c;
 }
 
 [[nodiscard]] not_null<Ui::RpWidget*> PrepareQrWidget(
@@ -125,7 +126,7 @@ namespace {
 	std::move(
 		palettes
 	) | rpl::map([] {
-		return TelegramLogoImage();
+		return AyuAssets::brandLogo();
 	}) | rpl::on_next([=](QImage &&image) {
 		state->center = std::move(image);
 	}, result->lifetime());

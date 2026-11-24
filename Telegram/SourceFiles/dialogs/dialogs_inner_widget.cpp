@@ -6,6 +6,9 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/dialogs_inner_widget.h"
+#include "window/themes/window_theme.h"
+#include "ayu/ayu_settings.h"
+#include "ayu/ui/graphite_surface.h"
 
 #include "dialogs/dialogs_three_state_icon.h"
 #include "dialogs/ui/chat_search_empty.h"
@@ -321,8 +324,13 @@ InnerWidget::InnerWidget(
 
 	_communityViewable.setRepaint([=] { update(); });
 
-	style::PaletteChanged(
+	rpl::merge(
+		style::PaletteChanged(),
+		AyuSettings::getInstance().graphiteListSurfaceValue() | rpl::skip(1) | rpl::to_empty,
+		AyuSettings::getInstance().graphiteGrainOpacityValue() | rpl::skip(1) | rpl::to_empty,
+		controller->filtersMenuChanged()
 	) | rpl::on_next([=] {
+		refresh();
 		_topicJumpCache = nullptr;
 		_chatsFilterTags.clear();
 		_rightButtons.clear();
@@ -489,6 +497,9 @@ InnerWidget::InnerWidget(
 	) | rpl::on_next([=](const Data::HistoryUpdate &update) {
 		if (update.flags & Data::HistoryUpdate::Flag::IsPinned) {
 			stopReorderPinned();
+			if (Window::Theme::IsTerminalTheme()) {
+				refresh();
+			}
 		}
 		if (update.flags & Data::HistoryUpdate::Flag::ChatOccupied) {
 			this->update();
@@ -669,7 +680,7 @@ void InnerWidget::refreshWithCollapsedRows(bool toTop) {
 	const auto archive = !_shownList->empty()
 		? _shownList->begin()->get()->folder()
 		: nullptr;
-	const auto inMainMenu = session().settings().archiveInMainMenu();
+	const auto inMainMenu = session().settings().archiveInMainMenu() || archiveInNavigation();
 	if (archive && (session().settings().archiveCollapsed() || inMainMenu)) {
 		if (_selected && _selected->folder() == archive) {
 			_selected = nullptr;
@@ -707,6 +718,45 @@ int InnerWidget::collapsedRowsOffset() const {
 	return 0;
 }
 
+int InnerWidget::GraphiteSections::rowY(int raw) const {
+	return raw + barHeight * ((pinned >= 0 && raw >= pinned)
+		+ (chats >= 0 && raw >= chats));
+}
+
+int InnerWidget::GraphiteSections::rawY(int visual) const {
+	auto raw = visual;
+	for (const auto boundary : { pinned, chats }) {
+		if (boundary >= 0 && raw >= boundary) {
+			raw = std::max(boundary, raw - barHeight);
+		}
+	}
+	return raw;
+}
+
+bool InnerWidget::archiveInNavigation() const {
+	return Window::Theme::IsTerminalTheme() && _controller->filtersWidth() > 0;
+}
+
+InnerWidget::GraphiteSections InnerWidget::graphiteSections() const {
+	auto result = GraphiteSections();
+	if (!Window::Theme::IsTerminalTheme() || _state != WidgetState::Default
+		|| _openedFolder || _openedForum || _savedSublists || communityModeShown()
+		|| width() < st::columnMinimalWidthLeft || _shownList->empty()) {
+		return result;
+	}
+	const auto fixed = fixedOnTopCount();
+	result.barHeight = st::searchedBarHeight;
+	result.pinnedCount = PinnedDialogsCount(_filterId, _shownList);
+	result.chatsCount = _shownList->size() - fixed - result.pinnedCount;
+	if (result.pinnedCount) {
+		result.pinned = shownHeight(fixed);
+	}
+	if (result.chatsCount) {
+		result.chats = shownHeight(fixed + result.pinnedCount);
+	}
+	return result;
+}
+
 int InnerWidget::dialogsOffset() const {
 	return collapsedRowsOffset()
 		+ (_collapsedRows.size() * st::dialogsImportantBarHeight)
@@ -737,7 +787,7 @@ int InnerWidget::shownHeight(int till) const {
 }
 
 int InnerWidget::pinnedOffset() const {
-	return dialogsOffset() + shownHeight(fixedOnTopCount());
+	return dialogsOffset() + graphiteSections().rowY(shownHeight(fixedOnTopCount()));
 }
 
 int InnerWidget::hashtagsOffset() const {
@@ -807,7 +857,7 @@ int InnerWidget::searchedOffset() const {
 }
 
 int InnerWidget::communityViewableTop() const {
-	return dialogsOffset() + _shownList->height();
+	return dialogsOffset() + graphiteSections().rowY(_shownList->height());
 }
 
 int InnerWidget::communityRequestableTop() const {
@@ -1039,14 +1089,31 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 		.narrow = (fullWidth < st::columnMinimalWidthLeft / 2),
 		.insideCommunity = communityModeShown(),
 	};
+	const auto sections = graphiteSections();
+	const auto hasSections = sections.pinned >= 0 || sections.chats >= 0;
+	const auto listSurface = Window::Theme::IsTerminalTheme()
+		? AyuSettings::getInstance().graphiteListSurface() : 0;
+	const auto grain = AyuSettings::getInstance().graphiteGrainOpacity();
+	const auto pane = QRect(0, _visibleTop, fullWidth, _visibleBottom - _visibleTop);
+	if (hasSections) {
+		p.fillRect(r, currentBg());
+		::Ui::PaintGraphiteSurface(p, pane, r, listSurface, grain);
+	}
 	const auto fillGuard = gsl::finally([&] {
 		// We translate painter down, but it'll be cropped below rect.
-		p.fillRect(rect(), context.currentBg);
+		if (!hasSections) {
+			p.fillRect(rect(), context.currentBg);
+		}
 	});
 	const auto paintRow = [&](
 			not_null<Row*> row,
 			bool selected,
 			bool mayBeActive) {
+		context.graphiteSurfaceBounds = (listSurface == 1)
+			? QRect(0, 0, fullWidth, row->height())
+			: pane.translated(0, -qRound(p.transform().dy()));
+		context.graphiteSurface = listSurface;
+		context.graphiteGrain = grain;
 		const auto &key = row->key();
 		const auto active = mayBeActive && isRowActive(row, activeEntry);
 		const auto history = key.history();
@@ -1092,7 +1159,7 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 			: _chatPreviewRow.key
 			? (row->key() == _chatPreviewRow.key)
 			: selected;
-		const auto cacheAllowed = _rowsScrollCache.scrolling()
+		const auto cacheAllowed = listSurface <= 1 && _rowsScrollCache.scrolling()
 			&& (!videoUserpic || !context.narrow)
 			&& !active
 			&& !cacheSelected
@@ -1237,6 +1304,9 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 		if (communityModeShown()) {
 			p.save();
 		}
+		if (hasSections) {
+			p.save();
+		}
 		const auto collapsedSkip = collapsedRowsOffset();
 		p.translate(0, collapsedSkip);
 		paintCollapsedRows(p, r.translated(0, -collapsedSkip));
@@ -1275,9 +1345,10 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 				const auto pinned = row->index() - promoted;
 				const auto count = _pinnedRows.size();
 				const auto xadd = 0;
-				const auto yadd = base::in_range(pinned, 0, count)
-					? int(base::SafeRound(_pinnedRows[pinned].yadd.current()))
-					: 0;
+				const auto yadd = sections.rowY(row->top()) - row->top()
+					+ (base::in_range(pinned, 0, count)
+						? int(base::SafeRound(_pinnedRows[pinned].yadd.current()))
+						: 0);
 				if (xadd || yadd) {
 					p.translate(xadd, yadd);
 				}
@@ -1287,7 +1358,7 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 				}
 			};
 
-			auto i = list.findByY(dialogsClip.top() - skip);
+			auto i = list.findByY(sections.rawY(dialogsClip.top() - skip));
 			if (_skipTopDialog && i != list.cend() && !(*i)->index()) {
 				++i;
 			}
@@ -1298,13 +1369,13 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 				if (reorderingPinned) {
 					const auto pinnedBottom = shownHeight(promoted + _pinnedRows.size());
 					const auto pinnedTop = shownHeight(promoted);
-					p.fillRect(0, pinnedTop - skippedTop, fullWidth, pinnedBottom - pinnedTop, currentBg());
+					p.fillRect(0, sections.rowY(pinnedTop) - skippedTop, fullWidth, pinnedBottom - pinnedTop, currentBg());
 				}
 
 				p.translate(0, top - skippedTop);
 				for (auto e = list.cend(); i != e; ++i) {
 					auto row = (*i);
-					if (top >= dialogsClip.top() - skip + dialogsClip.height()) {
+					if (sections.rowY(top) >= dialogsClip.top() - skip + dialogsClip.height()) {
 						break;
 					}
 
@@ -1326,6 +1397,31 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 			}
 		} else {
 			p.fillRect(dialogsClip, currentBg());
+		}
+		if (hasSections) {
+			p.restore();
+			const auto drawHeader = [&](int raw, QString title, int count) {
+				if (raw < 0) {
+					return;
+				}
+				const auto top = dialogsOffset() + sections.rowY(raw) - sections.barHeight;
+				const auto bar = QRect(0, top, fullWidth, sections.barHeight);
+				if (!bar.intersects(r)) {
+					return;
+				}
+				p.fillRect(bar, currentBg());
+				p.fillRect(0, bar.bottom(), fullWidth, st::lineWidth, st::shadowFg);
+				const auto margin = st::searchedBarPosition.x();
+				p.setPen(st::windowSubTextFg);
+				p.setFont(st::semiboldFont);
+				p.drawText(bar.adjusted(margin, 0, -margin, 0),
+					Qt::AlignVCenter | Qt::AlignLeading, title);
+				p.setFont(st::normalFont);
+				p.drawText(bar.adjusted(margin, 0, -margin, 0),
+					Qt::AlignVCenter | Qt::AlignTrailing, QString::number(count));
+			};
+			drawHeader(sections.pinned, tr::ayu_GraphitePinnedChats(tr::now), sections.pinnedCount);
+			drawHeader(sections.chats, tr::ayu_GraphiteAllChats(tr::now), sections.chatsCount);
 		}
 		if (communityModeShown()) {
 			p.restore();
@@ -2058,7 +2154,7 @@ void InnerWidget::showPeerMenu() {
 	const auto &padding = st::defaultDialogRow.padding;
 	const auto pos = QPoint(
 		width() - padding.right(),
-		_selected->top() + _selected->height() + padding.bottom());
+		defaultRowTop(_selected) + _selected->height() + padding.bottom());
 	auto event = QContextMenuEvent(
 		QContextMenuEvent::Keyboard,
 		pos,
@@ -2296,12 +2392,15 @@ void InnerWidget::selectByMouse(QPoint globalPosition) {
 			&& mouseY < _collapsedRows.size() * st::dialogsImportantBarHeight)
 			? (mouseY / st::dialogsImportantBarHeight)
 			: -1;
-		const auto selected = (collapsedSelected >= 0)
+		const auto sections = graphiteSections();
+		const auto visual = mouseY - offset;
+		const auto raw = sections.rawY(visual);
+		const auto selected = (collapsedSelected >= 0 || visual < sections.rowY(raw))
 			? nullptr
 			: (mouseY >= offset)
-			? _shownList->rowAtY(mouseY - offset)
+			? _shownList->rowAtY(raw)
 			: nullptr;
-		const auto mappedY = selected ? mouseY - offset - selected->top() : 0;
+		const auto mappedY = selected ? raw - selected->top() : 0;
 		const auto selectedTopicJump = selected
 			&& selected->lookupIsInTopicJump(local.x(), mappedY);
 		const auto selectedRightButton = selected
@@ -2554,7 +2653,7 @@ void InnerWidget::mousePressEvent(QMouseEvent *e) {
 			}
 		};
 		const auto origin = e->pos()
-			- QPoint(0, dialogsOffset() + _pressed->top());
+			- QPoint(0, dialogsOffset() + graphiteSections().rowY(_pressed->top()));
 		if ((_pressButton == Qt::MiddleButton)
 			&& addQuickActionRipple(row, updateCallback)) {
 		} else if (addRightButtonRipple(origin, updateCallback)) {
@@ -3333,6 +3432,11 @@ void InnerWidget::setCommunityPressed(int pressed) {
 }
 
 void InnerWidget::resizeEvent(QResizeEvent *e) {
+	if (Window::Theme::IsTerminalTheme()
+		&& (e->oldSize().width() < st::columnMinimalWidthLeft)
+			!= (width() < st::columnMinimalWidthLeft)) {
+		refresh();
+	}
 	if (_searchTags) {
 		_searchTags->resizeToWidth(width() - 2 * _searchTagsLeft);
 	}
@@ -3431,8 +3535,9 @@ void InnerWidget::handleChatListEntryRefreshes() {
 		}
 	}) | rpl::on_next([=](const Event &event) {
 		const auto offset = dialogsOffset();
-		const auto from = offset + event.moved.from;
-		const auto to = offset + event.moved.to;
+		const auto sections = graphiteSections();
+		const auto from = offset + sections.rowY(event.moved.from);
+		const auto to = offset + sections.rowY(event.moved.to);
 		const auto &key = event.key;
 		const auto entry = key.entry();
 
@@ -3511,7 +3616,7 @@ int InnerWidget::defaultRowTop(not_null<Row*> row) const {
 	if (base::in_range(index, 0, _pinnedRows.size())) {
 		top += int(base::SafeRound(_pinnedRows[index].yadd.current()));
 	}
-	return top + row->top();
+	return top + graphiteSections().rowY(row->top());
 }
 
 void InnerWidget::repaintDialogRow(
@@ -3623,7 +3728,7 @@ void InnerWidget::updateDialogRow(
 					const auto yadd = _pinnedRows[position].yadd.current();
 					top += int(base::SafeRound(yadd));
 				}
-				updateRow(top + dialog->top(), dialog->height());
+				updateRow(top + graphiteSections().rowY(dialog->top()), dialog->height());
 			}
 		}
 	} else if (_state == WidgetState::Filtered) {
@@ -3747,8 +3852,9 @@ void InnerWidget::invalidateLoadedUserpics() {
 	}
 	const auto skip = dialogsOffset();
 	const auto &list = _shownList->all();
-	const auto till = _visibleBottom - skip;
-	for (auto i = list.findByY(_visibleTop - skip), e = list.cend()
+	const auto sections = graphiteSections();
+	const auto till = sections.rawY(_visibleBottom - skip);
+	for (auto i = list.findByY(sections.rawY(_visibleTop - skip)), e = list.cend()
 		; i != e
 		; ++i) {
 		const auto row = (*i).get();
@@ -3856,9 +3962,9 @@ void InnerWidget::updateSelectedRow(Key key) {
 				const auto yadd = _pinnedRows[position].yadd.current();
 				top += int(base::SafeRound(yadd));
 			}
-			update(0, top + row->top(), width(), row->height());
+			update(0, top + graphiteSections().rowY(row->top()), width(), row->height());
 		} else if (_selected) {
-			update(0, dialogsOffset() + _selected->top(), width(), _selected->height());
+			update(0, dialogsOffset() + graphiteSections().rowY(_selected->top()), width(), _selected->height());
 		} else if (_collapsedSelected >= 0) {
 			update(0, _collapsedSelected * st::dialogsImportantBarHeight, width(), st::dialogsImportantBarHeight);
 		} else if (_communitySelected >= 0) {
@@ -4932,7 +5038,7 @@ bool InnerWidget::needCollapsedRowsRefresh() const {
 	const auto archiveIsCollapsed = (archive != nullptr)
 		&& session().settings().archiveCollapsed();
 	const auto archiveIsInMainMenu = (archive != nullptr)
-		&& session().settings().archiveInMainMenu();
+		&& (session().settings().archiveInMainMenu() || archiveInNavigation());
 	return archiveIsInMainMenu
 		? (collapsedHasArchive || !_skipTopDialog)
 		: archiveIsCollapsed
@@ -4973,10 +5079,10 @@ void InnerWidget::refresh(bool toTop) {
 			} else {
 				h = communitySectionsBottom();
 			}
-		} else if (_shownList->empty()) {
+		} else if (_shownList->size() == int(_skipTopDialog) && _collapsedRows.empty()) {
 			h = st::dialogsEmptyHeight;
 		} else {
-			h = dialogsOffset() + _shownList->height();
+			h = dialogsOffset() + graphiteSections().rowY(_shownList->height());
 		}
 	} else if (_state == WidgetState::Filtered) {
 		if (_searchEmpty && !_searchEmpty->isHidden()) {
@@ -5040,7 +5146,7 @@ void InnerWidget::refreshEmpty() {
 	}
 
 	const auto data = &session().data();
-	const auto state = !_shownList->empty()
+	const auto state = (_shownList->size() > int(_skipTopDialog) || !_collapsedRows.empty())
 		? EmptyState::None
 		: _savedSublists
 		? (_savedSublists->chatsList()->loaded()
@@ -5565,7 +5671,7 @@ void InnerWidget::scrollToFilteredSelected() {
 void InnerWidget::scrollToEntry(const RowDescriptor &entry) {
 	if (_state == WidgetState::Default) {
 		if (auto row = _shownList->getRow(entry.key)) {
-			scrollToItem(dialogsOffset() + row->top(), row->height());
+			scrollToItem(dialogsOffset() + graphiteSections().rowY(row->top()), row->height());
 		}
 	} else if (_state == WidgetState::Filtered) {
 		for (auto i = 0, c = int(_previewResults.size()); i != c; ++i) {
@@ -5641,7 +5747,7 @@ void InnerWidget::scrollToDefaultSelected() {
 		const auto from = _collapsedSelected * st::dialogsImportantBarHeight;
 		scrollToItem(from, st::dialogsImportantBarHeight);
 	} else if (_selected) {
-		const auto from = dialogsOffset() + _selected->top();
+		const auto from = dialogsOffset() + graphiteSections().rowY(_selected->top());
 		scrollToItem(from, _selected->height());
 	}
 }
@@ -6576,8 +6682,10 @@ not_null<Ui::QuickActionContext*> InnerWidget::ensureQuickAction(int64 key) {
 }
 
 int64 InnerWidget::calcSwipeKey(int top) {
-	top -= dialogsOffset();
-	if (top < 0) {
+	const auto sections = graphiteSections();
+	const auto visual = top - dialogsOffset();
+	top = sections.rawY(visual);
+	if (top < 0 || visual < sections.rowY(top)) {
 		return 0;
 	}
 	for (auto it = _shownList->begin(); it != _shownList->end(); ++it) {
@@ -7080,7 +7188,7 @@ QRect InnerWidget::accessibilityChildRect(int index) const {
 		// position past the collapsed rows.
 		return QRect(
 			0,
-			ref->row->top() + dialogsOffset(),
+			dialogsOffset() + graphiteSections().rowY(ref->row->top()),
 			width(),
 			ref->row->height());
 	} else if (_state == WidgetState::Filtered) {

@@ -30,6 +30,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_emoji_interactions.h"
 #include "chat_helpers/emoji_interactions.h"
 #include "history/view/history_view_message.h"
+#include "history/view/history_view_forum.h"
 #include "history/view/history_view_service_message.h"
 #include "history/view/history_view_cursor_state.h"
 #include "history/view/history_view_translate_tracker.h"
@@ -108,6 +109,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/features/filters/filters_cache_controller.h"
+#include "ayu/ayu_settings.h"
 #include "ayu/utils/telegram_helpers.h"
 
 
@@ -383,6 +385,11 @@ void ListWidget::enumerateUserpics(Method method) {
 		// Skip all service messages.
 		if (view->data()->isService()) {
 			return true;
+		}
+
+		if (HistoryView::ForumRecord(view)) {
+			return !view->hasFromPhoto() || view->isAttachedToPrevious()
+				|| method(view, itemtop + view->marginTop());
 		}
 
 		if (lowestAttachedItemTop < 0 && view->isAttachedToNext()) {
@@ -679,6 +686,22 @@ ListWidget::ListWidget(
 			}
 		});
 	}, lifetime());
+
+	if (elementContext() == Context::History) {
+		rpl::combine(
+			AyuSettings::getInstance().graphiteForumMessagesValue(),
+			AyuSettings::getInstance().graphiteMessageIdsValue(),
+			AyuSettings::getInstance().graphiteAvatarSizeValue(),
+			AyuSettings::getInstance().graphiteMessageSizeValue()
+		) | rpl::skip(1) | rpl::on_next([=] {
+			saveScrollState();
+			for (const auto &view : _items) {
+				view->initDimensions();
+				view->setPendingResize();
+			}
+			updateSize();
+		}, lifetime());
+	}
 
 	_session->downloaderTaskFinished(
 	) | rpl::on_next([=] {
@@ -3272,7 +3295,7 @@ void ListWidget::paintUserpics(
 		}
 
 		// paint the userpic if it intersects the painted rect
-		if (userpicTop + st::msgPhotoSize > clip.top()) {
+		if (userpicTop + HistoryView::ForumPhotoSize(view) > clip.top()) {
 			const auto item = view->data();
 			const auto shift = context.gestureHorizontal.visualTranslationFor(
 				item->id.bare);
@@ -3280,10 +3303,10 @@ void ListWidget::paintUserpics(
 				p.translate(shift, 0);
 				update(
 					QRect(
-						st::historyPhotoLeft + std::min(shift, 0),
+						HistoryView::ForumPhotoLeft(view) + std::min(shift, 0),
 						userpicTop,
-						st::msgPhotoSize + std::abs(shift),
-						st::msgPhotoSize));
+						HistoryView::ForumPhotoSize(view) + std::abs(shift),
+						HistoryView::ForumPhotoSize(view)));
 			}
 			if (const auto from = view->displayFrom()) {
 				Dialogs::Ui::PaintUserpic(
@@ -3291,28 +3314,28 @@ void ListWidget::paintUserpics(
 					from,
 					validateVideoUserpic(from),
 					_userpics[from],
-					st::historyPhotoLeft,
+					HistoryView::ForumPhotoLeft(view),
 					userpicTop,
 					view->width(),
-					st::msgPhotoSize,
+					HistoryView::ForumPhotoSize(view),
 					context.paused);
 			} else if (const auto info = item->displayHiddenSenderInfo()) {
 				if (info->customUserpic.empty()) {
 					info->emptyUserpic.paintCircle(
 						p,
-						st::historyPhotoLeft,
+						HistoryView::ForumPhotoLeft(view),
 						userpicTop,
 						view->width(),
-						st::msgPhotoSize);
+						HistoryView::ForumPhotoSize(view));
 				} else {
 					auto &userpic = _hiddenSenderUserpics[item->id];
 					const auto valid = info->paintCustomUserpic(
 						p,
 						userpic,
-						st::historyPhotoLeft,
+						HistoryView::ForumPhotoLeft(view),
 						userpicTop,
 						view->width(),
-						st::msgPhotoSize);
+						HistoryView::ForumPhotoSize(view));
 					if (!valid) {
 						info->customUserpic.load(session, item->fullId());
 					}
@@ -3348,14 +3371,14 @@ ListWidget::VideoUserpic *ListWidget::validateVideoUserpic(
 			if (userpicTop >= _visibleBottom) {
 				return false;
 			}
-			if (userpicTop + st::msgPhotoSize > _visibleTop) {
+			if (userpicTop + HistoryView::ForumPhotoSize(view) > _visibleTop) {
 				if (const auto from = view->data()->displayFrom()) {
 					if (from == peer) {
 						rtlupdate(
-							st::historyPhotoLeft,
+							HistoryView::ForumPhotoLeft(view),
 							userpicTop,
-							st::msgPhotoSize,
-							st::msgPhotoSize);
+							HistoryView::ForumPhotoSize(view),
+							HistoryView::ForumPhotoSize(view));
 					}
 				}
 			}
@@ -5277,8 +5300,8 @@ void ListWidget::mouseActionUpdate() {
 			_overItemExact = session().data().message(dragState.itemId);
 			lnkhost = view;
 			if (!dragState.link
-				&& itemPoint.x() >= st::historyPhotoLeft
-				&& itemPoint.x() < st::historyPhotoLeft + st::msgPhotoSize) {
+				&& itemPoint.x() >= HistoryView::ForumPhotoLeft(view)
+				&& itemPoint.x() < HistoryView::ForumPhotoLeft(view) + HistoryView::ForumPhotoSize(view)) {
 				if (view->hasFromPhoto()) {
 					enumerateUserpics([&](not_null<Element*> view, int userpicTop) {
 						// stop enumeration if the userpic is below our point
@@ -5287,7 +5310,7 @@ void ListWidget::mouseActionUpdate() {
 						}
 
 						// stop enumeration if we've found a userpic under the cursor
-						if (point.y() >= userpicTop && point.y() < userpicTop + st::msgPhotoSize) {
+						if (point.y() >= userpicTop && point.y() < userpicTop + HistoryView::ForumPhotoSize(view)) {
 							dragState = TextState(nullptr, view->fromPhotoLink());
 							dragState.cursor = CursorState::FromPhoto;
 							dragStateUserpic = true;

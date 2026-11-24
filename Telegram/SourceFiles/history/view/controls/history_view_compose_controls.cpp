@@ -6,6 +6,8 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/controls/history_view_compose_controls.h"
+#include "window/themes/window_theme.h"
+#include "ayu/ui/boxes/command_palette_box.h"
 
 #include "base/call_delayed.h"
 #include "base/event_filter.h"
@@ -213,6 +215,40 @@ using ForwardPanel = Controls::ForwardPanel;
 
 namespace Controls {
 const char kOptionMacCmdReplyImmediately[] = "mac-cmd-reply-immediately";
+int TerminalComposerInset(int width) {
+	return (Window::Theme::IsTerminalTheme() && width >= style::ConvertScale(250))
+		? style::ConvertScale(8)
+		: 0;
+}
+
+void PaintTerminalComposer(QPainter &p, QRect row, QRect field, bool focused) {
+	const auto inset = TerminalComposerInset(row.width());
+	if (!inset || field.isEmpty()) {
+		return;
+	}
+	p.save();
+	p.setRenderHint(QPainter::Antialiasing);
+	const auto radius = style::ConvertScale(5);
+	const auto outer = row.adjusted(inset, style::ConvertScale(2),
+		-inset - st::lineWidth, -style::ConvertScale(2) - st::lineWidth);
+	p.setPen(QPen(st::menuSeparatorFg->c, st::lineWidth));
+	p.setBrush(Qt::NoBrush);
+	p.drawRoundedRect(outer, radius, radius);
+	const auto gap = style::ConvertScale(3);
+	const auto gutter = style::ConvertScale(18);
+	const auto frame = field.adjusted(-gap, -gap, gap, gap);
+	const auto full = style::RightToLeft()
+		? frame.adjusted(0, 0, gutter, 0)
+		: frame.adjusted(-gutter, 0, 0, 0);
+	p.setPen(QPen(focused ? st::activeLineFg->c : st::menuSeparatorFg->c, st::lineWidth));
+	p.drawRoundedRect(full, radius, radius);
+	p.setPen(st::windowActiveTextFg->c);
+	p.setFont(st::msgDateFont->f);
+	p.drawText(QRect(style::RightToLeft() ? frame.right() : full.left(),
+		full.top(), gutter, full.height()), Qt::AlignCenter, u">"_q);
+	p.restore();
+}
+
 } // namespace Controls
 
 const ChatHelpers::PauseReason kDefaultPanelsLevel
@@ -2764,7 +2800,13 @@ void ComposeControls::init() {
 
 	if (_botCommandStart) {
 		_botCommandStart->setAccessibleName(tr::lng_bot_commands_start(tr::now));
-		_botCommandStart->setClickedCallback([=] { setText({ "/" }); });
+		_botCommandStart->setClickedCallback([=] {
+			if (_composePaletteShortcut && _regularWindow) {
+				Ayu::ShowCommandPalette(_regularWindow);
+			} else {
+				setText({ "/" });
+			}
+		});
 	}
 
 	initLikeButton();
@@ -2783,6 +2825,12 @@ void ComposeControls::init() {
 	) | rpl::on_next([=](QRect clip) {
 		auto p = QPainter(_wrap.get());
 		paintBackground(p, _wrap->rect(), clip);
+		if (!_backgroundRect && !_field->isHidden()) {
+			const auto rowTop = _field->y() - _st.padding.top();
+			Controls::PaintTerminalComposer(p,
+				QRect(0, rowTop, _wrap->width(), _wrap->height() - rowTop),
+				_field->geometry(), _field->hasFocus());
+		}
 	}, _wrap->lifetime());
 
 
@@ -3141,7 +3189,9 @@ void ComposeControls::initKeyHandler() {
 }
 
 void ComposeControls::initField() {
-	_field->setMaxHeight(st::historyComposeFieldMaxHeight);
+	_field->setMaxHeight((!_backgroundRect && Window::Theme::IsTerminalTheme())
+		? style::ConvertScale(180) - _st.padding.top() - _st.padding.bottom()
+		: st::historyComposeFieldMaxHeight);
 	updateSubmitSettings();
 	_field->submits(
 	) | rpl::on_next([=](Qt::KeyboardModifiers modifiers) {
@@ -4960,7 +5010,9 @@ void ComposeControls::updateControlsGeometry(QSize size) {
 		&& !_commentsShown->isHidden();
 	const auto giftToUser = _giftToUser
 		&& !_giftToUser->isHidden();
-	const auto fieldWidth = size.width()
+	const auto inset = _backgroundRect ? 0 : Controls::TerminalComposerInset(size.width());
+	const auto promptWidth = inset ? style::ConvertScale(18) : 0;
+	const auto fieldWidth = size.width() - 2 * inset - promptWidth
 		- (commentsShown
 			? (_commentsShown->width() + _st.commentsSkip)
 			: 0)
@@ -5013,9 +5065,9 @@ void ComposeControls::updateControlsGeometry(QSize size) {
 		}
 	}
 
-	const auto buttonsTop = size.height() - _st.attach.height;
+	const auto buttonsTop = size.height() - _st.attach.height - inset / 2;
 
-	auto left = 0;
+	auto left = inset;
 	if (commentsShown) {
 		_commentsShown->moveToLeft(left, buttonsTop);
 		left += _commentsShown->width() + _st.commentsSkip;
@@ -5039,6 +5091,7 @@ void ComposeControls::updateControlsGeometry(QSize size) {
 	}
 	const auto fieldHeight = composeFieldHeight();
 	const auto fieldTop = size.height() - _st.padding.bottom() - fieldHeight;
+	left += promptWidth;
 	_field->moveToLeft(left, fieldTop);
 	if (_richDraftPreview) {
 		_richDraftPreview->moveToLeft(left, fieldTop);
@@ -5053,7 +5106,7 @@ void ComposeControls::updateControlsGeometry(QSize size) {
 		0,
 		fieldTop - _st.padding.top() - _header->height());
 
-	auto right = 0;
+	auto right = inset;
 	if (_starsReaction) {
 		_starsReaction->moveToRight(right, buttonsTop);
 		right += _starsReaction->width() + _st.starsSkip;
@@ -5437,6 +5490,16 @@ bool ComposeControls::updateBotCommandShown() {
 			shown = true;
 		}
 	}
+	const auto palette = _regularWindow && !_backgroundRect && Window::Theme::IsTerminalTheme()
+		&& _botCommandStart && peer && !shown && _botCommandStartExtraGuard.current()
+		&& !isEditingMessage() && !hasSendableContent();
+	if (palette != _composePaletteShortcut) {
+		_composePaletteShortcut = palette;
+		_botCommandStart->setAccessibleName(palette
+			? tr::lng_vygram_command_palette(tr::now)
+			: tr::lng_bot_commands_start(tr::now));
+	}
+	shown = shown || palette;
 	if (_botCommandShown != shown) {
 		_botCommandShown = shown;
 		return true;

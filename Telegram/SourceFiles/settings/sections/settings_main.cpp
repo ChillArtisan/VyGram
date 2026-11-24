@@ -92,6 +92,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ui/settings/settings_main.h"
+#include "ayu/ui/settings/settings_appearance.h"
 #include "ayu/ui/utils/ayu_profile_values.h"
 #include "ayu/utils/telegram_helpers.h"
 
@@ -390,19 +391,9 @@ void BuildSectionButtons(SectionBuilder &builder) {
 	const auto controller = builder.controller();
 	const auto showOther = builder.showOther();
 
-	builder.addSectionButton({
-		.title = tr::ayu_AyuPreferences(),
-		.targetSection = AyuMain::Id(),
-		.icon = { &st::menuIconPremium },
-		.keywords = { u"ayu"_q },
-	});
-	builder.addSkip();
-	builder.addDivider();
-	builder.addSkip();
-
 	if (!session->supportMode()) {
 		builder.addSectionButton({
-			.title = tr::lng_settings_my_account(),
+			.title = tr::lng_settings_information(),
 			.targetSection = InformationId(),
 			.icon = { &st::menuIconProfile },
 			.keywords = { u"profile"_q, u"edit"_q, u"information"_q },
@@ -423,6 +414,12 @@ void BuildSectionButtons(SectionBuilder &builder) {
 		.keywords = { u"security"_q, u"passcode"_q, u"password"_q, u"2fa"_q },
 	});
 
+	builder.addSectionButton({
+		.title = tr::ayu_CategoryAppearance(),
+		.targetSection = AyuAppearanceId(),
+		.icon = { &st::menuIconPalette },
+		.keywords = { u"graphite"_q, u"theme"_q },
+	});
 	builder.addSectionButton({
 		.title = tr::lng_settings_section_chat_settings(),
 		.targetSection = ChatId(),
@@ -463,6 +460,13 @@ void BuildSectionButtons(SectionBuilder &builder) {
 			.shown = std::move(shownProducer),
 		});
 	}
+
+	builder.addSectionButton({
+		.title = tr::ayu_AyuPreferences(),
+		.targetSection = AyuMain::Id(),
+		.icon = { &st::menuIconPremium },
+		.keywords = { u"ayu"_q },
+	});
 
 	builder.addSectionButton({
 		.title = tr::lng_settings_advanced(),

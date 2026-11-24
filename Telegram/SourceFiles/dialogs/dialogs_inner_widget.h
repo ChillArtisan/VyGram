@@ -476,6 +476,17 @@ private:
 	[[nodiscard]] int skipTopHeight() const;
 	[[nodiscard]] int collapsedRowsOffset() const;
 	[[nodiscard]] int dialogsOffset() const;
+	struct GraphiteSections {
+		int pinned = -1;
+		int chats = -1;
+		int pinnedCount = 0;
+		int chatsCount = 0;
+		int barHeight = 0;
+		[[nodiscard]] int rowY(int raw) const;
+		[[nodiscard]] int rawY(int visual) const;
+	};
+	[[nodiscard]] GraphiteSections graphiteSections() const;
+	[[nodiscard]] bool archiveInNavigation() const;
 	[[nodiscard]] int shownHeight(int till = -1) const;
 	[[nodiscard]] int fixedOnTopCount() const;
 	[[nodiscard]] int pinnedOffset() const;

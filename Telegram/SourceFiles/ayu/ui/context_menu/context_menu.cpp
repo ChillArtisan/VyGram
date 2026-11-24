@@ -16,6 +16,8 @@
 #include "ayu/features/filters/filters_controller.h"
 #include "ayu/features/forward/ayu_forward.h"
 #include "ayu/features/forward/ayu_forward_rich.h"
+#include "ayu/ui/boxes/chat_labels_box.h"
+#include "ayu/ui/boxes/chat_privacy_box.h"
 #include "ayu/ui/context_menu/menu_item_subtext.h"
 #include "ayu/ui/message_history/history_section.h"
 #include "ayu/ui/settings/filters/edit_filter.h"
@@ -260,9 +262,6 @@ void AddAyuGramActions(PeerData *peerData,
 	const auto showFilters = settings.filtersEnabled()
 		&& (!user || user->isBot());
 	const auto saveDeletedMessages = settings.saveDeletedMessages();
-	if (!showFilters && !saveDeletedMessages) {
-		return;
-	}
 
 	const auto topic = peerData->isForum() && thread ? thread->asTopic() : nullptr;
 	const auto topicId = topic ? topic->rootId().bare : 0;
@@ -273,6 +272,39 @@ void AddAyuGramActions(PeerData *peerData,
 		.icon = &st::menuIconGroupReactions,
 		.fillSubmenu = [=](not_null<Ui::PopupMenu*> menu) {
 			const auto addAction = Ui::Menu::CreateAddActionCallback(menu);
+			const auto archived = AyuMessages::isChatArchiveEnabled(peerData);
+			addAction(
+				archived
+					? tr::lng_vygram_archive_disable(tr::now)
+					: tr::lng_vygram_archive_enable(tr::now),
+				[=] {
+					if (!AyuMessages::setChatArchiveEnabled(peerData, !archived)) {
+						sessionController->showToast(tr::lng_vygram_archive_write_failed(tr::now));
+						return;
+					}
+					if (!archived) {
+						if (const auto history = peerData->owner().historyLoaded(peerData)) {
+							for (const auto &block : history->blocks) {
+								for (const auto &view : block->messages) {
+									AyuMessages::archiveChatMessage(view->data());
+								}
+							}
+						}
+					}
+				},
+				&st::menuIconArchive);
+			addAction(
+				tr::lng_vygram_chat_privacy_title(tr::now),
+				[=] { Ayu::ShowChatPrivacy(sessionController, peerData); },
+				&st::menuIconGroupReactions);
+			addAction(
+				tr::lng_vygram_labels_edit(tr::now),
+				[=] { Ayu::ShowChatLabelEditor(sessionController, peerData); },
+				&st::menuIconAddToFolder);
+			addAction(
+				tr::lng_vygram_labels_title(tr::now),
+				[=] { Ayu::ShowChatLabelFilter(sessionController); },
+				&st::menuIconAddToFolder);
 			if (showFilters) {
 				addAction(
 					tr::ayu_ViewFiltersMenuText(tr::now),

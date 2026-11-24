@@ -41,6 +41,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ui/ayu_logo.h"
+#include "ayu/ui/graphite_surface.h"
+#include "window/themes/window_theme.h"
 
 
 namespace Intro {
@@ -446,6 +448,18 @@ void Step::prepareCoverMask() {
 
 void Step::paintCover(QPainter &p, int top) {
 	auto coverHeight = top + st::introCoverHeight;
+	if (Window::Theme::IsTerminalTheme()) {
+		const auto panel = QRect(0, top, width(), st::introCoverHeight);
+		p.fillRect(panel, st::introBg->c);
+		Ui::PaintGraphiteSurface(p, panel, rect(), 2, 3);
+		const auto side = style::ConvertScale(64);
+		p.save();
+		p.setRenderHint(QPainter::SmoothPixmapTransform);
+		p.drawImage(QRect((width() - side) / 2, top + st::introCoverIconTop,
+			side, side), AyuAssets::brandLogo());
+		p.restore();
+		return;
+	}
 	if (coverHeight > 0) {
 		p.drawPixmap(
 			QRect(0, 0, width(), coverHeight),
@@ -479,7 +493,7 @@ void Step::paintCover(QPainter &p, int top) {
 	st::introCoverRight.paint(p, width() - right - st::introCoverRight.width(), coverHeight - st::introCoverRight.height(), width());
 
 	auto planeTop = top + st::introCoverIconTop;
-	const auto ayuGramIcon = Ui::PixmapFromImage(AyuAssets::currentAppLogo());
+	const auto ayuGramIcon = Ui::PixmapFromImage(QImage(AyuAssets::brandLogo()));
 	QIcon(ayuGramIcon).paint(&p, QRect(width() / 2 - ayuGramIcon.width() / 2, planeTop - 16, ayuGramIcon.width(), st::introCoverIcon.height()));
 }
 

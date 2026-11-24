@@ -271,7 +271,7 @@ QString GetAccountName(uint64 userId) {
 			return account->session().user()->name();
 		}
 	}
-	return QString("Unknown");
+	return tr::lng_credits_box_history_entry_anonymous(tr::now);
 }
 
 QString PickerLabel(uint64 userId) {

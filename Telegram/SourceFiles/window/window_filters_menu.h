@@ -33,12 +33,16 @@ namespace Window {
 class SessionController;
 class FolderFavoriteButton;
 
+void ShowGraphiteActivity(not_null<SessionController*> window);
+
 class FiltersMenu final {
 public:
 	FiltersMenu(
 		not_null<Ui::RpWidget*> parent,
 		not_null<SessionController*> session);
 	~FiltersMenu();
+	[[nodiscard]] bool isGraphite() const { return _graphite; }
+	[[nodiscard]] int railWidth() const;
 
 private:
 	void setup();
@@ -63,6 +67,7 @@ private:
 		bool locked = false,
 		bool toBeginning = false);
 	void setupMainMenuIcon();
+	void setupGraphiteNavigation();
 	void showMenu(QPoint position, FilterId id);
 	void scrollToButton(not_null<Ui::RpWidget*> widget);
 	void applyFilterAt(int start, int delta);
@@ -75,10 +80,15 @@ private:
 
 	const not_null<SessionController*> _session;
 	const not_null<Ui::RpWidget*> _parent;
+	const bool _graphite;
+	std::unique_ptr<style::SideBarButton> _graphiteFolderStyle;
 	Ui::RpWidget _outer;
+	Ui::RpWidget *_railSettings = nullptr;
+	QString _accountBadge;
 	Ui::SideBarButton _menu;
 	Ui::ScrollArea _scroll;
 	not_null<Ui::VerticalLayout*> _container;
+	Ui::VerticalLayout *_folderHost = nullptr;
 	Ui::VerticalLayout *_list = nullptr;
 	std::unique_ptr<Ui::VerticalLayoutReorder> _reorder;
 	base::unique_qptr<Ui::SideBarButton> _setup;

@@ -34,6 +34,33 @@ void shutdown();
 [[nodiscard]] bool storeMedia(ID userId, ID mediaId, int mediaType, const QByteArray &bytes);
 [[nodiscard]] QByteArray loadMedia(ID userId, ID mediaId, int mediaType);
 
+struct ArchivedChat {
+	ID userId = 0;
+	ID dialogId = 0;
+	std::string name;
+	bool enabled = false;
+};
+
+[[nodiscard]] bool setArchivedChatEnabled(
+	ID userId, ID dialogId, const std::string &name, bool enabled);
+[[nodiscard]] bool isArchivedChatEnabled(ID userId, ID dialogId);
+[[nodiscard]] bool archiveChatMessage(const AyuMessageBase &message);
+[[nodiscard]] std::vector<ArchivedChat> archivedChats(ID userId);
+[[nodiscard]] std::vector<AyuMessageBase> archivedChatMessages(
+	ID userId,
+	ID dialogId,
+	ID beforeId,
+	int totalLimit,
+	const std::string &searchQuery = {},
+	int minDate = 0,
+	int maxDate = 0,
+	int documentType = -1);
+[[nodiscard]] bool storeArchivedChatMedia(
+	ID userId, ID dialogId, ID mediaId, int mediaType, const QByteArray &bytes);
+[[nodiscard]] QByteArray loadArchivedChatMedia(
+	ID userId, ID dialogId, ID mediaId, int mediaType);
+[[nodiscard]] bool purgeArchivedChat(ID userId, ID dialogId);
+
 void addEditedMessage(const EditedMessage &message);
 std::vector<EditedMessage> getEditedMessages(ID userId, ID dialogId, ID messageId, ID minId, ID maxId, int totalLimit);
 bool hasRevisions(ID userId, ID dialogId, ID messageId);

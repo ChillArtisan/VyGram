@@ -92,6 +92,10 @@ enum class Command {
 	SupportScrollToCurrent,
 	SupportHistoryBack,
 	SupportHistoryForward,
+	Palette,
+	OpenDownloads,
+	OpenSettings,
+	ToggleChatMute,
 };
 
 [[maybe_unused]] constexpr auto kShowFolder = {
@@ -142,6 +146,7 @@ void Listen(not_null<QWidget*> widget);
 bool Launch(Command command);
 bool HandleEvent(not_null<QObject*> object, not_null<QShortcutEvent*> event);
 
+bool HandleLayoutShortcut(not_null<QKeyEvent*> event);
 bool HandlePossibleChatSwitch(not_null<QKeyEvent*> event);
 
 struct ChatSwitchRequest {

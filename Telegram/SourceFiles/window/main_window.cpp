@@ -7,7 +7,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/main_window.h"
 
+#include "core/version.h"
+
 #include "api/api_updates.h"
+#include "mtproto/mtp_instance.h"
 #include "storage/localstorage.h"
 #include "platform/platform_specific.h"
 #include "ui/platform/ui_platform_window.h"
@@ -577,9 +580,7 @@ void MainWindow::init() {
 		}, lifetime());
 	}
 	refreshTitleWidget();
-	if constexpr (Core::BuildIsCanary) {
-		setupCanaryTitleLabel();
-	}
+	setupBuildTitleLabel();
 
 	updateTitle();
 	updateWindowIcon();
@@ -701,22 +702,95 @@ void MainWindow::refreshTitleWidget() {
 	}
 }
 
-void MainWindow::setupCanaryTitleLabel() {
+void MainWindow::setupBuildTitleLabel() {
 	const auto title = titleWidget();
 	if (!title) {
 		return;
 	}
+	setTitleStyle(st::graphiteWindowTitle);
+	const auto label = Ui::CreateChild<Ui::RpWidget>(title);
+	label->setAttribute(Qt::WA_TransparentForMouseEvents);
+	label->show();
 	const auto layout = Ui::Platform::TitleControlsLayout::Instance();
-	const auto label = Ui::CreateTitleSubWidget(
-		title,
-		st::titleSubWidgetStyle,
-		rpl::single(Core::CanaryTitleLabel()),
-		layout->value(
-		) | rpl::map([](const Ui::Platform::TitleLayout &layout) {
-			return layout.onLeft() ? style::al_right : style::al_left;
-		}),
-		additionalContentPaddingValue());
 	label->lifetime().add([layout] {});
+	rpl::combine(
+		title->sizeValue(),
+		additionalContentPaddingValue(),
+		layout->value()
+	) | rpl::on_next([=](QSize size, int top, const Ui::Platform::TitleLayout &buttons) {
+		const auto left = int(buttons.left.size()) * st::graphiteCaptionButton.width;
+		const auto right = int(buttons.right.size()) * st::graphiteCaptionButton.width;
+		label->setGeometry(left, top, std::max(0, size.width() - left - right),
+			std::max(0, size.height() - top));
+	}, label->lifetime());
+
+	struct ConnectionLabel {
+		QString text;
+		QColor color;
+	};
+	const auto status = label->lifetime().make_state<ConnectionLabel>();
+	rpl::combine(
+		_controller->sessionControllerValue(),
+		Core::App().settings().proxy().connectionTypeValue(),
+		tr::ayu_GraphiteOnline(),
+		tr::ayu_GraphiteConnecting(),
+		tr::ayu_GraphiteOffline()
+	) | rpl::on_next([=](SessionController *session, const auto &,
+			const QString &online, const QString &connecting, const QString &offline) {
+		const auto state = session ? session->session().mtp().dcstate() : MTP::DisconnectedState;
+		*status = !session ? ConnectionLabel()
+			: (state == MTP::ConnectedState) ? ConnectionLabel{ online, QColor(131, 166, 139) }
+			: (state == MTP::ConnectingState) ? ConnectionLabel{ connecting, QColor(228, 177, 110) }
+			: ConnectionLabel{ offline, QColor(133, 129, 123) };
+		label->update();
+	}, label->lifetime());
+
+	const auto version = u"v%1   [%2]"_q.arg(QString::fromLatin1(AppVersionStr),
+		QString::fromLatin1(Core::Updates::ChannelName(Core::BuildUpdateChannel)))
+		+ Core::CanaryVersionSuffix();
+	label->paintRequest() | rpl::on_next([=] {
+		auto p = QPainter(label);
+		const auto bounds = label->rect();
+		const auto mid = bounds.height() / 2;
+		const auto px = [](int v) { return style::ConvertScale(v); };
+		static const auto texture = QPixmap(u":/gui/graphite/title.jpg"_q);
+		p.fillRect(bounds, st::titleBgActive->c);
+		if (!texture.isNull()) {
+			p.drawTiledPixmap(bounds, texture);
+		}
+		p.setRenderHint(QPainter::SmoothPixmapTransform);
+		const auto side = px(25);
+		p.drawImage(QRect(px(16), mid - side / 2, side, side), AyuAssets::brandLogo());
+		auto brand = st::semiboldFont->f;
+		brand.setPixelSize(px(17));
+		p.setFont(brand);
+		p.setPen(st::windowActiveTextFg->c);
+		auto x = px(52);
+		const auto text = u"VyGram"_q;
+		p.drawText(QRect(x, 0, px(100), bounds.height()), Qt::AlignVCenter, text);
+		x += QFontMetrics(brand).horizontalAdvance(text) + px(18);
+		p.setPen(st::shadowFg->c);
+		p.drawLine(x, mid - px(8), x, mid + px(8));
+		auto mono = QFont(u"JetBrains Mono"_q);
+		mono.setPixelSize(px(12));
+		p.setFont(mono);
+		p.setPen(st::titleFgActive->c);
+		x += px(18);
+		const auto versionWidth = QFontMetrics(mono).horizontalAdvance(version);
+		if (x + versionWidth < bounds.width() - px(8)) {
+			p.drawText(QRect(x, 0, versionWidth + px(2), bounds.height()), Qt::AlignVCenter, version);
+		}
+		const auto textWidth = QFontMetrics(mono).horizontalAdvance(status->text);
+		const auto statusLeft = bounds.width() - px(18) - textWidth;
+		if (!status->text.isEmpty() && statusLeft > x + versionWidth + px(32)) {
+			p.drawText(QRect(statusLeft, 0, textWidth + px(2), bounds.height()),
+				Qt::AlignVCenter, status->text);
+			p.setRenderHint(QPainter::Antialiasing);
+			p.setPen(Qt::NoPen);
+			p.setBrush(status->color);
+			p.drawEllipse(QPoint(statusLeft - px(12), mid), px(3), px(3));
+		}
+	}, label->lifetime());
 
 	title->shownValue(
 	) | rpl::skip(1) | rpl::on_next([=] {
@@ -802,12 +876,11 @@ QRect MainWindow::countInitialGeometry(WindowPosition position) {
 	const auto primaryAvailable = primaryScreen
 		? primaryScreen->availableGeometry()
 		: QRect(0, 0, st::windowDefaultWidth, st::windowDefaultHeight);
-	const auto initialWidth = Core::Settings::ThirdColumnByDefault()
-		? st::windowBigDefaultWidth
-		: st::windowDefaultWidth;
-	const auto initialHeight = Core::Settings::ThirdColumnByDefault()
-		? st::windowBigDefaultHeight
-		: st::windowDefaultHeight;
+	// Leave room for all three Graphite columns on a new desktop installation.
+	// CountInitialGeometry still restores a saved rectangle on subsequent starts.
+	const auto initialWidth = std::min(primaryAvailable.width(),
+		style::ConvertScale(Core::Settings::ThirdColumnByDefault() ? 1440 : 1280));
+	const auto initialHeight = std::min(primaryAvailable.height(), style::ConvertScale(800));
 	const auto initial = WindowPosition{
 		.x = (primaryAvailable.x()
 			+ std::max((primaryAvailable.width() - initialWidth) / 2, 0)),

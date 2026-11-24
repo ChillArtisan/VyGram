@@ -8,6 +8,9 @@
 
 #include "lang_auto.h"
 #include "ayu/ayu_settings.h"
+#include "ayu/ui/boxes/chat_archive_box.h"
+#include "ayu/ui/boxes/chat_labels_box.h"
+#include "ayu/ui/boxes/protection_status_box.h"
 #include "ayu/ui/boxes/send_templates_box.h"
 #include "ayu/ui/settings/ayu_builder.h"
 #include "ayu/ui/settings/settings_ayu_utils.h"
@@ -275,7 +278,7 @@ void BuildQoLToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 
 	ayu.addSectionDivider();
 
-	builder.addSubsectionTitle(rpl::single(QString("Webview")));
+	builder.addSubsectionTitle(tr::lng_edit_privacy_miniapps());
 
 	ayu.addSettingToggle({
 		.id = u"ayu/spoofWebviewAsAndroid"_q,
@@ -318,6 +321,24 @@ const auto kMeta = BuildHelper({
 		.title = tr::lng_send_templates_title(),
 		.st = &st::settingsButtonNoIcon,
 		.onClick = [=] { Ayu::ShowSendTemplates(controller); },
+	});
+	builder.addButton({
+		.id = u"ayu/localArchive"_q,
+		.title = tr::lng_chat_archive_title(),
+		.st = &st::settingsButtonNoIcon,
+		.onClick = [=] { AyuUi::ShowChatArchive(controller); },
+	});
+	builder.addButton({
+		.id = u"ayu/protectionStatus"_q,
+		.title = tr::lng_vygram_protection_title(),
+		.st = &st::settingsButtonNoIcon,
+		.onClick = [=] { Ayu::ShowProtectionStatus(controller); },
+	});
+	builder.addButton({
+		.id = u"ayu/chatLabels"_q,
+		.title = tr::lng_vygram_labels_title(),
+		.st = &st::settingsButtonNoIcon,
+		.onClick = [=] { Ayu::ShowChatLabelFilter(controller); },
 	});
 	BuildQoLToggles(builder, ayu);
 	builder.addSkip();

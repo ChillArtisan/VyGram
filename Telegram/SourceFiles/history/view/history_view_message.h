@@ -370,6 +370,8 @@ private:
 		Painter &p,
 		QRect &g,
 		const PaintContext &context) const;
+	[[nodiscard]] QMargins recordPadding() const;
+	[[nodiscard]] QRect forumHeaderInfoRect(QRect header) const;
 	void paintFromName(
 		Painter &p,
 		QRect &trect,
@@ -541,6 +543,7 @@ private:
 	mutable std::unique_ptr<FromNameStatus> _fromNameStatus;
 	mutable std::unique_ptr<Ui::RoundCheckbox> _selectionRoundCheckbox;
 	mutable uint32 _fromNameVersion : 16 = 0;
+	mutable bool _forumSelfName = false;
 	uint32 _nonTextMaxWidth : 16 = 0;
 	mutable int _bubbleTextualWidthMinimum : 16 = -1;
 	mutable int _bubbleTextualWidthCache : 16 = 0;

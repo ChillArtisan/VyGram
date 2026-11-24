@@ -50,11 +50,24 @@ class TerminalThemeTests(unittest.TestCase):
                 a, b = sorted((luminance(palette[foreground]), luminance(palette[background])))
                 self.assertGreaterEqual((b + 0.05) / (a + 0.05), 4.5)
 
+    def test_secondary_screen_contrast(self):
+        palette = colors(PALETTE)
+        for foreground, background in (
+            ("mediaviewMenuFg", "mediaviewMenuBg"),
+            ("mediaviewControlFg", "mediaviewVideoBg"),
+            ("introDescriptionFg", "introBg"),
+            ("callNameFg", "callBgOpaque"),
+        ):
+            with self.subTest(foreground=foreground):
+                self.assertGreaterEqual(
+                    (luminance(palette[foreground]) + 0.05)
+                    / (luminance(palette[background]) + 0.05), 4.5)
+
     def test_terminal_surfaces_are_dark_and_accent_is_warm(self):
         palette = colors(PALETTE)
         for key in ("windowBg", "dialogsBg", "msgInBg", "msgOutBg", "historyComposeAreaBg"):
             self.assertLess(luminance(palette[key]), 0.04, key)
-        self.assertEqual(palette["windowBgActive"], "#d3ba87")
+        self.assertEqual(palette["windowBgActive"], "#e4b16e")
         self.assertEqual(palette["msgInShadow"][-2:], "00")
         self.assertEqual(palette["msgOutShadow"][-2:], "00")
 
@@ -64,9 +77,9 @@ class TerminalThemeTests(unittest.TestCase):
             with self.subTest(key=key):
                 rgb = bytes.fromhex(palette[key][1:7])
                 self.assertLessEqual(max(rgb) - min(rgb), 8)
-        self.assertEqual(palette["windowFg"], "#dce1e8")
-        self.assertEqual(palette["msgInBg"], "#1b1f23")
-        self.assertEqual(palette["msgOutBg"], "#24282c")
+        self.assertEqual(palette["windowFg"], "#e6e3de")
+        self.assertEqual(palette["msgInBg"], "#201f1d")
+        self.assertEqual(palette["msgOutBg"], "#292724")
 
     def test_dates_and_service_text_are_muted_grey(self):
         palette = colors(PALETTE)
@@ -77,24 +90,15 @@ class TerminalThemeTests(unittest.TestCase):
                 self.assertLessEqual(max(rgb) - min(rgb), 24)
                 self.assertLess(luminance(palette[key]), luminance(palette["windowFg"]))
 
-    def test_distributed_theme_contains_current_palette_and_solid_background(self):
+    def test_distributed_theme_contains_current_palette_and_grain_background(self):
         with zipfile.ZipFile(THEME) as archive:
             self.assertIsNone(archive.testzip())
             self.assertEqual(set(archive.namelist()), {"colors.tdesktop-palette", "tiled.png"})
             self.assertEqual(archive.read("colors.tdesktop-palette"), PALETTE.read_bytes())
             png = archive.read("tiled.png")
             self.assertEqual(png[:8], b"\x89PNG\r\n\x1a\n")
-            self.assertEqual(struct.unpack(">II", png[16:24]), (32, 32))
-            offset, compressed = 8, bytearray()
-            while offset < len(png):
-                size = struct.unpack(">I", png[offset:offset + 4])[0]
-                kind = png[offset + 4:offset + 8]
-                if kind == b"IDAT":
-                    compressed.extend(png[offset + 8:offset + 8 + size])
-                offset += size + 12
-            pixel = bytes.fromhex("111316")
-            expected = (b"\x00" + pixel * 32) * 32
-            self.assertEqual(zlib.decompress(compressed), expected)
+            self.assertEqual(struct.unpack(">II", png[16:24]), (256, 256))
+            self.assertEqual(png, (RESOURCES / "terminal-grain.png").read_bytes())
 
     def test_native_resources_resolve_to_existing_theme_and_font(self):
         qrc = RESOURCES / "qrc/telegram/telegram.qrc"

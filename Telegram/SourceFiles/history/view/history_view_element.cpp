@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_element.h"
+#include "history/view/history_view_forum.h"
 
 #include "apiwrap.h"
 #include "api/api_transcribes.h"
@@ -81,8 +82,27 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_ayu_styles.h"
 
 
+#include <map>
+
 namespace HistoryView {
 namespace {
+
+const style::TextStyle &MessageBodyStyle(const Element *view) {
+	const auto &original = st::messageTextStyle;
+	if (!ForumRecord(view)) {
+		return original;
+	}
+	const auto size = style::ConvertScale(AyuSettings::getInstance().graphiteMessageSize());
+	const auto family = original.font->family();
+	// Text strings retain the style pointer. Map nodes keep their address.
+	static std::map<std::pair<int, int>, style::TextStyle> styles;
+	const auto [i, inserted] = styles.try_emplace({ size, family }, original);
+	if (inserted) {
+		i->second.font = style::font(size, original.font->flags(), family);
+	}
+	return i->second;
+}
+
 
 [[nodiscard]] auto FlatSelectionEndpointFromState(const TextState &state)
 -> MessageSelectionFlatEndpoint {
@@ -2233,7 +2253,7 @@ void Element::validateText() {
 	const auto summaryShownChanged = (summaryShownWas != summaryShownNow);
 	if (summaryShownNow) {
 		_flags |= Flag::SummaryShown;
-		if (summaryShownChanged) {
+		if (summaryShownChanged || _text.style() != &MessageBodyStyle(this)) {
 			setTextWithLinks(summary.result);
 		}
 		clearRichPage();
@@ -2251,7 +2271,9 @@ void Element::validateText() {
 	}
 	const auto &text = _textItem->_text;
 	auto richPage = std::shared_ptr<const Iv::RichPage>();
-	if (!summaryShownChanged && _text.isEmpty() == text.empty()) {
+	if (!summaryShownChanged && _text.isEmpty() == text.empty()
+		&& (text.empty() || (_flags & Flag::ServiceMessage)
+			|| _text.style() == &MessageBodyStyle(this))) {
 	} else if (_flags & Flag::ServiceMessage) {
 		const auto contextDependentText = contextDependentServiceText();
 		const auto &markedText = contextDependentText.text.empty()
@@ -2316,12 +2338,13 @@ void Element::setTextWithLinks(
 		const auto item = data();
 		const auto &options = Ui::ItemTextOptions(item);
 		clearSpecialOnlyEmoji();
-		_text.setMarkedText(st::messageTextStyle, text, options, context);
+		const auto &style = MessageBodyStyle(this);
+		_text.setMarkedText(style, text, options, context);
 		if (!item->_text.empty() && _text.isEmpty()){
 			// If server has allowed some text that we've trim-ed entirely,
 			// just replace it with something so that UI won't look buggy.
 			_text.setMarkedText(
-				st::messageTextStyle,
+				style,
 				{ u":-("_q },
 				Ui::ItemTextOptions(item));
 		}
@@ -2878,7 +2901,7 @@ bool Element::hasOutLayout() const {
 }
 
 bool Element::hasRightLayout() const {
-	return hasOutLayout()
+	return hasOutLayout() && !ForumRecord(this)
 		&& (_delegate->elementChatMode() != ElementChatMode::Wide);
 }
 

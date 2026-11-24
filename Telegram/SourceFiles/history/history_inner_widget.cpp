@@ -27,6 +27,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_about_view.h"
 #include "history/view/history_view_drag.h"
 #include "history/view/history_view_message.h"
+#include "history/view/history_view_forum.h"
 #include "history/view/history_view_service_message.h"
 #include "history/view/history_view_cursor_state.h"
 #include "history/view/history_view_reply_button.h"
@@ -137,6 +138,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QMimeData>
 
 // AyuGram includes
+#include "window/themes/window_theme.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/features/filters/filters_cache_controller.h"
 #include "ayu/ui/context_menu/context_menu.h"
@@ -422,6 +424,26 @@ HistoryInner::HistoryInner(
 		controller->setChatStyleTheme(_theme);
 	}, lifetime());
 	Assert(_theme != nullptr);
+	rpl::combine(
+		AyuSettings::getInstance().graphiteForumMessagesValue(),
+		AyuSettings::getInstance().graphiteMessageIdsValue(),
+		AyuSettings::getInstance().graphiteAvatarSizeValue(),
+		AyuSettings::getInstance().graphiteMessageSizeValue()
+	) | rpl::skip(1) | rpl::on_next([=] {
+		const auto reflow = [](not_null<History*> history) {
+			for (const auto &block : history->blocks) {
+				for (const auto &view : block->messages) {
+					view->initDimensions();
+				}
+			}
+			history->forceFullResize();
+		};
+		reflow(_history);
+		if (_migrated) {
+			reflow(_migrated);
+		}
+		_widget->handlePendingHistoryUpdate();
+	}, lifetime());
 
 	setAttribute(Qt::WA_AcceptTouchEvents);
 
@@ -1102,7 +1124,9 @@ void HistoryInner::enumerateItemsInHistory(History *history, int historytop, Met
 }
 
 bool HistoryInner::canHaveFromUserpics() const {
-	if (_peer->isUser()
+	const auto forum = Window::Theme::IsTerminalTheme()
+		&& AyuSettings::getInstance().graphiteForumMessages();
+	if (!forum && _peer->isUser()
 		&& !_peer->isSelf()
 		&& !_peer->isRepliesChat()
 		&& !_peer->isVerifyCodes()
@@ -1112,7 +1136,9 @@ bool HistoryInner::canHaveFromUserpics() const {
 	} else if (const auto channel = _peer->asBroadcast()) {
 		return channel->signatureProfiles();
 	}
-	return _isChatWide || !_removeFromUserpics;
+	return (Window::Theme::IsTerminalTheme()
+		&& AyuSettings::getInstance().graphiteForumMessages())
+		|| _isChatWide || !_removeFromUserpics;
 }
 
 void HistoryInner::toggleRemoveFromUserpics(bool remove) {
@@ -1134,6 +1160,11 @@ void HistoryInner::enumerateUserpics(Method method) {
 		const auto item = view->data();
 		if (view->isHidden() || item->isService()) {
 			return true;
+		}
+
+		if (HistoryView::ForumRecord(view)) {
+			return !view->hasFromPhoto() || view->isAttachedToPrevious()
+				|| method(view, itemtop + view->marginTop());
 		}
 
 		if (lowestAttachedItemTop < 0 && view->isAttachedToNext()) {
@@ -1790,7 +1821,7 @@ void HistoryInner::paintEvent(QPaintEvent *e) {
 		}
 
 		// paint the userpic if it intersects the painted rect
-		if (userpicTop + st::msgPhotoSize > clip.top()) {
+		if (userpicTop + HistoryView::ForumPhotoSize(view) > clip.top()) {
 			const auto item = view->data();
 			const auto shift = context.gestureHorizontal.visualTranslationFor(
 				item->id.bare);
@@ -1798,10 +1829,10 @@ void HistoryInner::paintEvent(QPaintEvent *e) {
 				p.translate(shift, 0);
 				update(
 					QRect(
-						st::historyPhotoLeft + std::min(shift, 0),
+						HistoryView::ForumPhotoLeft(view) + std::min(shift, 0),
 						userpicTop,
-						st::msgPhotoSize + std::abs(shift),
-						st::msgPhotoSize));
+						HistoryView::ForumPhotoSize(view) + std::abs(shift),
+						HistoryView::ForumPhotoSize(view)));
 			}
 			if (const auto from = item->displayFrom()) {
 				Dialogs::Ui::PaintUserpic(
@@ -1809,28 +1840,28 @@ void HistoryInner::paintEvent(QPaintEvent *e) {
 					from,
 					validateVideoUserpic(from),
 					_userpics[from],
-					st::historyPhotoLeft,
+					HistoryView::ForumPhotoLeft(view),
 					userpicTop,
 					width(),
-					st::msgPhotoSize,
+					HistoryView::ForumPhotoSize(view),
 					context.paused);
 			} else if (const auto info = item->displayHiddenSenderInfo()) {
 				if (info->customUserpic.empty()) {
 					info->emptyUserpic.paintCircle(
 						p,
-						st::historyPhotoLeft,
+						HistoryView::ForumPhotoLeft(view),
 						userpicTop,
 						width(),
-						st::msgPhotoSize);
+						HistoryView::ForumPhotoSize(view));
 				} else {
 					auto &userpic = _hiddenSenderUserpics[item->id];
 					const auto valid = info->paintCustomUserpic(
 						p,
 						userpic,
-						st::historyPhotoLeft,
+						HistoryView::ForumPhotoLeft(view),
 						userpicTop,
 						width(),
-						st::msgPhotoSize);
+						HistoryView::ForumPhotoSize(view));
 					if (!valid) {
 						info->customUserpic.load(&session(), item->fullId());
 					}
@@ -1970,14 +2001,14 @@ HistoryInner::VideoUserpic *HistoryInner::validateVideoUserpic(
 			}
 
 			// repaint the userpic if it intersects the painted rect
-			if (userpicTop + st::msgPhotoSize > _visibleAreaTop) {
+			if (userpicTop + HistoryView::ForumPhotoSize(view) > _visibleAreaTop) {
 				if (const auto from = view->data()->displayFrom()) {
 					if (from == peer) {
 						rtlupdate(
-							st::historyPhotoLeft,
+							HistoryView::ForumPhotoLeft(view),
 							userpicTop,
-							st::msgPhotoSize,
-							st::msgPhotoSize);
+							HistoryView::ForumPhotoSize(view),
+							HistoryView::ForumPhotoSize(view));
 					}
 				}
 			}
@@ -5708,7 +5739,7 @@ void HistoryInner::mouseActionUpdate() {
 			dragState = view->textState(m, request);
 			_dragStateItem = session().data().message(dragState.itemId);
 			lnkhost = view;
-			if (!dragState.link && m.x() >= st::historyPhotoLeft && m.x() < st::historyPhotoLeft + st::msgPhotoSize) {
+			if (!dragState.link && m.x() >= HistoryView::ForumPhotoLeft(view) && m.x() < HistoryView::ForumPhotoLeft(view) + HistoryView::ForumPhotoSize(view)) {
 				if (!item->isService() && view->hasFromPhoto()) {
 					enumerateUserpics([&](not_null<Element*> view, int userpicTop) -> bool {
 						// stop enumeration if the userpic is below our point
@@ -5717,7 +5748,7 @@ void HistoryInner::mouseActionUpdate() {
 						}
 
 						// stop enumeration if we've found a userpic under the cursor
-						if (point.y() >= userpicTop && point.y() < userpicTop + st::msgPhotoSize) {
+						if (point.y() >= userpicTop && point.y() < userpicTop + HistoryView::ForumPhotoSize(view)) {
 							dragState = TextState(nullptr, view->fromPhotoLink());
 							dragState.cursor = CursorState::FromPhoto;
 							dragStateUserpic = true;

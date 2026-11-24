@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_pinned_bar.h"
+#include "window/themes/window_theme.h"
 
 #include "api/api_bot.h"
 #include "lang/lang_keys.h"
@@ -205,6 +206,7 @@ auto WithPinnedTitle(not_null<Main::Session*> session, PinnedId id) {
 			: (tr::lng_pinned_message(tr::now)
 				+ " #"
 				+ QString::number(id.index + 1));
+		content.showPinIcon = Window::Theme::IsTerminalTheme();
 		content.count = std::max(id.count, 1);
 		content.index = std::clamp(id.index, 0, content.count - 1);
 		return std::move(content);

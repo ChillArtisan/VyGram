@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/text_options.h"
 #include "ui/ui_utility.h"
 #include "styles/style_chat.h"
+#include "styles/style_menu_icons.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/palette.h"
 
@@ -232,7 +233,9 @@ void MessageBar::refreshImage() {
 }
 
 QRect MessageBar::imageRect() const {
-	const auto left = st::msgReplyBarSkip + st::msgReplyBarSkip;
+	const auto left = _content.showPinIcon
+		? style::ConvertScale(48)
+		: st::msgReplyBarSkip + st::msgReplyBarSkip;
 	const auto top = (st::historyReplyHeight - st::historyReplyPreview) / 2;
 	const auto size = st::historyReplyPreview;
 	return QRect(left, top, size, size);
@@ -253,7 +256,7 @@ QRect MessageBar::titleRangeRect(int from, int till) const {
 }
 
 QRect MessageBar::bodyRect(bool withImage) const {
-	const auto innerLeft = st::msgReplyBarSkip + st::msgReplyBarSkip;
+	const auto innerLeft = imageRect().x();
 	const auto imageSkip = st::historyReplyPreview + st::msgReplyBarSkip;
 	const auto left = innerLeft + (withImage ? imageSkip : 0);
 	const auto top = st::msgReplyPadding.top();
@@ -376,7 +379,13 @@ void MessageBar::paint(Painter &p) {
 	const auto paused = p.inactive();
 	const auto pausedSpoiler = paused || On(PowerSaving::kChatSpoiler);
 
-	paintLeftBar(p);
+	if (_content.showPinIcon) {
+		st::menuIconPin.paint(p, style::ConvertScale(14),
+			(_widget.height() - st::menuIconPin.height()) / 2,
+			_widget.width(), st::windowActiveTextFg->c);
+	} else {
+		paintLeftBar(p);
+	}
 
 	if (!_animation) {
 		if (!_image.isNull()) {

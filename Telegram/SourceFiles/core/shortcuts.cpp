@@ -19,7 +19,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_specific.h"
 
 #include <QAction>
+#include <QApplication>
 #include <QShortcut>
+#include <QTextEdit>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
@@ -86,6 +88,10 @@ const auto CommandByName = base::flat_map<QString, Command>{
 	{ u"media_previous"_q                , Command::MediaPrevious },
 	{ u"media_next"_q                    , Command::MediaNext },
 
+	{ u"open_downloads"_q                , Command::OpenDownloads },
+	{ u"toggle_chat_mute"_q              , Command::ToggleChatMute },
+	{ u"open_settings"_q                 , Command::OpenSettings },
+	{ u"command_palette"_q               , Command::Palette },
 	{ u"search"_q                        , Command::Search },
 
 	{ u"previous_chat"_q                 , Command::ChatPrevious },
@@ -492,6 +498,7 @@ void Manager::fillDefaults() {
 	set(u"media previous"_q          , Command::MediaPrevious);
 	set(u"media next"_q              , Command::MediaNext);
 
+	set(u"ctrl+k"_q                  , Command::Palette);
 	set(u"ctrl+f"_q                  , Command::Search);
 	set(u"search"_q                  , Command::Search);
 	set(u"find"_q                    , Command::Search);
@@ -525,15 +532,20 @@ void Manager::fillDefaults() {
 
 	for (const auto &[command, index] : folders) {
 		set(u"%1+%2"_q.arg(ctrl).arg(index), command);
+		set(u"alt+%1"_q.arg(index), command);
 	}
 
 	set(u"%1+shift+down"_q.arg(ctrl) , Command::FolderNext);
 	set(u"%1+shift+up"_q.arg(ctrl)   , Command::FolderPrevious);
 
 	set(u"ctrl+0"_q                  , Command::ChatSelf);
+	set(u"ctrl+n"_q                  , Command::ShowContacts);
+	set(u"ctrl+shift+m"_q            , Command::ToggleChatMute);
+	set(u"ctrl+g"_q                  , Command::ChatSelf);
+	set(u"ctrl+,"_q                  , Command::OpenSettings);
 
 	set(u"ctrl+9"_q                  , Command::ShowArchive);
-	set(u"ctrl+j"_q                  , Command::ShowContacts);
+	set(u"ctrl+j"_q                  , Command::OpenDownloads);
 
 	set(u"ctrl+r"_q                  , Command::ReadChat);
 
@@ -895,11 +907,78 @@ bool HandleEvent(
 		}
 		return false;
 	}
+	if (!Paused && event->isAmbiguous() && event->key() == QKeySequence(u"Ctrl+K"_q)) {
+		const auto bindings = Data.keysCurrents();
+		const auto binding = bindings.find(event->key());
+		if (binding != bindings.end() && binding->second.contains(Command::Palette)) {
+			const auto edit = qobject_cast<QTextEdit*>(QApplication::focusWidget());
+			if ((!edit || !edit->textCursor().hasSelection()) && Launch(Command::Palette)) {
+				return true;
+			}
+			if (edit) {
+				const auto shortcuts = edit->findChildren<QShortcut*>(QString(), Qt::FindDirectChildrenOnly);
+				for (const auto local : shortcuts) {
+					if (local->isEnabled() && local->key() == event->key()) {
+						local->activated();
+						return true;
+					}
+				}
+			}
+		}
+	}
 	return Launch(Data.lookup(object));
 }
 
 rpl::producer<ChatSwitchRequest> ChatSwitchRequests() {
 	return ChatSwitchStream.events();
+}
+
+bool HandleLayoutShortcut(not_null<QKeyEvent*> event) {
+#ifdef Q_OS_WIN
+	// Qt shortcuts normally run before KeyPress. Windows OEM and letter keys
+	// can reach the focused widget instead when a Cyrillic layout is active.
+	if (Paused || event->isAutoRepeat()) {
+		return false;
+	}
+	const auto modifiers = event->modifiers();
+	if (modifiers != Qt::ControlModifier
+		&& modifiers != (Qt::ControlModifier | Qt::ShiftModifier)) {
+		return false;
+	}
+	constexpr auto kOemComma = 0xBC;
+	const auto vk = event->nativeVirtualKey();
+	const auto comma = (vk == kOemComma) || event->key() == Qt::Key_Comma
+		|| event->key() == 0x0411; // Cyrillic capital Be on the comma key.
+	if (!comma && (event->key() < 0x0400 || event->key() > 0x04FF || vk < 'A' || vk > 'Z')) {
+		return false;
+	}
+	if (comma && modifiers != Qt::ControlModifier) {
+		return false;
+	}
+	const auto sequence = QKeySequence(int(modifiers) | (comma ? int(Qt::Key_Comma) : int(vk)));
+	const auto bindings = Data.keysCurrents();
+	const auto i = bindings.find(sequence);
+	if (i == bindings.end()) {
+		return false;
+	}
+	for (const auto command : { Command::OpenSettings, Command::Palette, Command::ChatSelf,
+			Command::ShowContacts, Command::OpenDownloads, Command::ToggleChatMute, Command::Search }) {
+		if (!i->second.contains(command)) {
+			continue;
+		}
+		const auto edit = qobject_cast<QTextEdit*>(QApplication::focusWidget());
+		if (command == Command::Palette && edit && edit->textCursor().hasSelection()) {
+			for (const auto shortcut : edit->findChildren<QShortcut*>(QString(), Qt::FindDirectChildrenOnly)) {
+				if (shortcut->isEnabled() && shortcut->key() == sequence) {
+					shortcut->activated();
+					return true;
+				}
+			}
+		}
+		return Launch(command);
+	}
+#endif
+	return false;
 }
 
 bool HandlePossibleChatSwitch(not_null<QKeyEvent*> event) {

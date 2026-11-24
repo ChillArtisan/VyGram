@@ -1663,7 +1663,10 @@ SessionController::SessionController(
 	}, lifetime());
 
 	const auto processFiltersMenu = [this] {
-		if (SessionNavigation::session().data().chatsFilters().has()) {
+		if (Theme::IsTerminalTheme() && enoughSpaceForFilters()) {
+			content()->toggleFiltersMenu(false);
+			toggleFiltersMenu(true);
+		} else if (SessionNavigation::session().data().chatsFilters().has()) {
 			const auto isHorizontal
 				= Core::App().settings().chatFiltersHorizontal()
 					|| !enoughSpaceForFilters();
@@ -1675,6 +1678,7 @@ SessionController::SessionController(
 		}
 	};
 	rpl::merge(
+		style::PaletteChanged(),
 		enoughSpaceForFiltersValue() | rpl::skip(1) | rpl::to_empty,
 		Core::App().settings().chatFiltersHorizontalChanges() | rpl::to_empty,
 		session->data().chatsFilters().changed()
@@ -1684,6 +1688,16 @@ SessionController::SessionController(
 		}
 		checkOpenedFilter();
 		crl::on_main(this, processFiltersMenu);
+	}, lifetime());
+
+	rpl::combine(
+		AyuSettings::getInstance().graphiteNavLabelsValue(),
+		AyuSettings::getInstance().graphiteCompactNavValue()
+	) | rpl::skip(1) | rpl::on_next([=] {
+		if (_filters && _filters->isGraphite()) {
+			_filters = std::make_unique<FiltersMenu>(widget()->bodyWidget(), this);
+			_filtersMenuChanged.fire({});
+		}
 	}, lifetime());
 
 	session->data().itemIdChanged(
@@ -2025,7 +2039,8 @@ void SessionController::setupShortcuts() {
 }
 
 void SessionController::toggleFiltersMenu(bool enabled) {
-	if (!_isPrimary || (!enabled == !_filters)) {
+	if (!_isPrimary || ((!enabled == !_filters)
+			&& (!_filters || _filters->isGraphite() == Theme::IsTerminalTheme()))) {
 		return;
 	} else if (enabled) {
 		_filters = std::make_unique<FiltersMenu>(
@@ -2683,9 +2698,16 @@ int SessionController::countDialogsWidthFromRatio(int bodyWidth) const {
 		return 0;
 	}
 	const auto nochat = !mainSectionShown();
-	const auto width = bodyWidth
-		* Core::App().settings().dialogsWidthRatio(nochat);
-	auto result = int(base::SafeRound(width));
+	const auto ratio = Core::App().settings().dialogsWidthRatio(nochat);
+	const auto graphiteDefault = Theme::IsTerminalTheme()
+		&& std::abs(ratio - Core::Settings::DefaultDialogsWidthRatio()) < 0.00001;
+	auto result = graphiteDefault
+		? style::ConvertScale(360)
+		: int(base::SafeRound(bodyWidth * ratio));
+	if (Theme::IsTerminalTheme() && ratio > 0
+		&& widget()->width() >= style::ConvertScale(1100)) {
+		result = std::clamp(result, style::ConvertScale(340), style::ConvertScale(400));
+	}
 	accumulate_max(result, st::columnMinimalWidthLeft);
 //	accumulate_min(result, st::columnMaximalWidthLeft);
 	return result;
@@ -2693,6 +2715,9 @@ int SessionController::countDialogsWidthFromRatio(int bodyWidth) const {
 
 int SessionController::countThirdColumnWidthFromRatio(int bodyWidth) const {
 	auto result = Core::App().settings().thirdColumnWidth();
+	if (result == 0 && Theme::IsTerminalTheme()) {
+		result = style::ConvertScale(320);
+	}
 	accumulate_max(result, st::columnMinimalWidthThird);
 	accumulate_min(result, st::columnMaximalWidthThird);
 	return result;
@@ -3293,7 +3318,7 @@ not_null<MainWidget*> SessionController::content() const {
 }
 
 int SessionController::filtersWidth() const {
-	return _filters ? st::windowFiltersWidth : 0;
+	return _filters ? _filters->railWidth() : 0;
 }
 
 bool SessionController::enoughSpaceForFilters() const {

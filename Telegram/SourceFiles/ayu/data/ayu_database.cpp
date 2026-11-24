@@ -15,6 +15,7 @@
 #include <QFile>
 
 #include <mutex>
+#include <set>
 
 using namespace sqlite_orm;
 
@@ -27,8 +28,19 @@ struct PrivateSetting {
 	std::vector<char> value;
 };
 
+struct ArchivedChatMessage : AyuMessageBase {
+};
+
 struct ArchivedMedia {
 	ID userId = 0;
+	ID mediaId = 0;
+	int mediaType = 0;
+	std::vector<char> bytes;
+};
+
+struct ArchivedChatMedia {
+	ID userId = 0;
+	ID dialogId = 0;
 	ID mediaId = 0;
 	int mediaType = 0;
 	std::vector<char> bytes;
@@ -51,6 +63,16 @@ auto makeStorage(const std::string &path) {
 		primary_key(&ArchivedMedia::userId, &ArchivedMedia::mediaId,
 			&ArchivedMedia::mediaType)
 	),
+	make_table<ArchivedChatMedia>(
+		"ArchivedChatMedia",
+		make_column("userId", &ArchivedChatMedia::userId),
+		make_column("dialogId", &ArchivedChatMedia::dialogId),
+		make_column("mediaId", &ArchivedChatMedia::mediaId),
+		make_column("mediaType", &ArchivedChatMedia::mediaType),
+		make_column("bytes", &ArchivedChatMedia::bytes),
+		primary_key(&ArchivedChatMedia::userId, &ArchivedChatMedia::dialogId,
+			&ArchivedChatMedia::mediaId, &ArchivedChatMedia::mediaType)
+	),
 	make_table<SchemaVersion>(
 		"SchemaVersion",
 		make_column("id", &SchemaVersion::id, primary_key()),
@@ -65,6 +87,56 @@ auto makeStorage(const std::string &path) {
 			   column<EditedMessage>(&EditedMessage::userId),
 			   column<EditedMessage>(&EditedMessage::dialogId),
 			   column<EditedMessage>(&EditedMessage::messageId)),
+	make_table<AyuDatabase::ArchivedChat>(
+		"ArchivedChat",
+		make_column("userId", &AyuDatabase::ArchivedChat::userId),
+		make_column("dialogId", &AyuDatabase::ArchivedChat::dialogId),
+		make_column("name", &AyuDatabase::ArchivedChat::name),
+		make_column("enabled", &AyuDatabase::ArchivedChat::enabled),
+		primary_key(&AyuDatabase::ArchivedChat::userId,
+			&AyuDatabase::ArchivedChat::dialogId)
+	),
+	make_unique_index("idx_archived_chat_message",
+		column<ArchivedChatMessage>(&ArchivedChatMessage::userId),
+		column<ArchivedChatMessage>(&ArchivedChatMessage::dialogId),
+		column<ArchivedChatMessage>(&ArchivedChatMessage::messageId)),
+	make_table<ArchivedChatMessage>(
+		"ArchivedChatMessage",
+		make_column("fakeId", &ArchivedChatMessage::fakeId),
+		make_column("userId", &ArchivedChatMessage::userId),
+		make_column("dialogId", &ArchivedChatMessage::dialogId),
+		make_column("groupedId", &ArchivedChatMessage::groupedId),
+		make_column("peerId", &ArchivedChatMessage::peerId),
+		make_column("fromId", &ArchivedChatMessage::fromId),
+		make_column("topicId", &ArchivedChatMessage::topicId),
+		make_column("messageId", &ArchivedChatMessage::messageId),
+		make_column("date", &ArchivedChatMessage::date),
+		make_column("flags", &ArchivedChatMessage::flags),
+		make_column("editDate", &ArchivedChatMessage::editDate),
+		make_column("views", &ArchivedChatMessage::views),
+		make_column("fwdFlags", &ArchivedChatMessage::fwdFlags),
+		make_column("fwdFromId", &ArchivedChatMessage::fwdFromId),
+		make_column("fwdName", &ArchivedChatMessage::fwdName),
+		make_column("fwdDate", &ArchivedChatMessage::fwdDate),
+		make_column("fwdPostAuthor", &ArchivedChatMessage::fwdPostAuthor),
+		make_column("replyFlags", &ArchivedChatMessage::replyFlags),
+		make_column("replyMessageId", &ArchivedChatMessage::replyMessageId),
+		make_column("replyPeerId", &ArchivedChatMessage::replyPeerId),
+		make_column("replyTopId", &ArchivedChatMessage::replyTopId),
+		make_column("replyForumTopic", &ArchivedChatMessage::replyForumTopic),
+		make_column("replySerialized", &ArchivedChatMessage::replySerialized),
+		make_column("replyMarkupSerialized", &ArchivedChatMessage::replyMarkupSerialized),
+		make_column("entityCreateDate", &ArchivedChatMessage::entityCreateDate),
+		make_column("text", &ArchivedChatMessage::text),
+		make_column("textEntities", &ArchivedChatMessage::textEntities),
+		make_column("mediaPath", &ArchivedChatMessage::mediaPath),
+		make_column("hqThumbPath", &ArchivedChatMessage::hqThumbPath),
+		make_column("documentType", &ArchivedChatMessage::documentType),
+		make_column("documentSerialized", &ArchivedChatMessage::documentSerialized),
+		make_column("thumbsSerialized", &ArchivedChatMessage::thumbsSerialized),
+		make_column("documentAttributesSerialized", &ArchivedChatMessage::documentAttributesSerialized),
+		make_column("mimeType", &ArchivedChatMessage::mimeType)
+	),
 	make_table<DeletedMessage>(
 		"DeletedMessage",
 		make_column("fakeId", &DeletedMessage::fakeId, primary_key().autoincrement()),
@@ -190,10 +262,12 @@ struct ArchiveState {
 	std::unique_ptr<ArchiveStorage> database;
 	QByteArray key;
 	bool unlocked = false;
+	std::optional<std::set<std::pair<ID, ID>>> enabledChats;
 
 	void clear() {
 		unlocked = false;
 		database.reset();
+		enabledChats.reset();
 		if (!key.isEmpty()) {
 			OPENSSL_cleanse(key.data(), key.size());
 			key.clear();
@@ -212,6 +286,36 @@ ArchiveStorage &openedStorage() {
 		throw std::runtime_error("Secure archive is locked.");
 	}
 	return *archive.database;
+}
+
+bool chatArchivingEnabled(ID userId, ID dialogId) {
+	if (!archive.unlocked) {
+		return false;
+	}
+	if (!archive.enabledChats) {
+		using AyuDatabase::ArchivedChat;
+		auto enabled = std::set<std::pair<ID, ID>>();
+		const auto chats = openedStorage().select(
+			columns(&ArchivedChat::userId, &ArchivedChat::dialogId),
+			where(c(&ArchivedChat::enabled) == true));
+		for (const auto &[account, chat] : chats) {
+			enabled.emplace(account, chat);
+		}
+		archive.enabledChats = std::move(enabled);
+	}
+	return archive.enabledChats->contains({ userId, dialogId });
+}
+
+std::string escapedSearchPattern(const std::string &query) {
+	auto result = std::string("%");
+	result.reserve(query.size() + 2);
+	for (const auto character : query) {
+		if (character == '%' || character == '_' || character == '\\') {
+			result += '\\';
+		}
+		result += character;
+	}
+	return result + "%";
 }
 
 } // namespace
@@ -426,6 +530,180 @@ QByteArray loadMedia(ID userId, ID mediaId, int mediaType) {
 	}
 }
 
+bool setArchivedChatEnabled(
+		ID userId,
+		ID dialogId,
+		const std::string &name,
+		bool enabled) {
+	std::lock_guard lock(databaseMutex);
+	if (!archive.unlocked || !userId || !dialogId) {
+		return false;
+	}
+	try {
+		auto &storage = openedStorage();
+		auto current = storage.get_pointer<ArchivedChat>(userId, dialogId);
+		if (!current && !enabled) {
+			return true;
+		}
+		auto chat = ArchivedChat{ userId, dialogId, name, enabled };
+		if (chat.name.empty() && current) {
+			chat.name = std::move(current->name);
+		}
+		storage.replace(chat);
+		archive.enabledChats.reset();
+		return true;
+	} catch (...) {
+		LOG(("Failed to update archived chat selection."));
+		return false;
+	}
+}
+
+bool isArchivedChatEnabled(ID userId, ID dialogId) {
+	std::lock_guard lock(databaseMutex);
+	try {
+		return chatArchivingEnabled(userId, dialogId);
+	} catch (...) {
+		LOG(("Failed to load archived chat selection."));
+		return false;
+	}
+}
+
+bool archiveChatMessage(const AyuMessageBase &message) {
+	std::lock_guard lock(databaseMutex);
+	if (message.messageId <= 0) {
+		return false;
+	}
+	try {
+		if (!chatArchivingEnabled(message.userId, message.dialogId)) {
+			return false;
+		}
+		auto snapshot = ArchivedChatMessage{ message };
+		snapshot.fakeId = 0;
+		openedStorage().replace(snapshot);
+		return true;
+	} catch (...) {
+		LOG(("Failed to save archived chat message."));
+		return false;
+	}
+}
+
+std::vector<ArchivedChat> archivedChats(ID userId) {
+	std::lock_guard lock(databaseMutex);
+	if (!archive.unlocked) {
+		return {};
+	}
+	try {
+		return openedStorage().get_all<ArchivedChat>(
+			where(c(&ArchivedChat::userId) == userId),
+			multi_order_by(
+				order_by(&ArchivedChat::name),
+				order_by(&ArchivedChat::dialogId)));
+	} catch (...) {
+		LOG(("Failed to list archived chats."));
+		return {};
+	}
+}
+
+std::vector<AyuMessageBase> archivedChatMessages(
+		ID userId,
+		ID dialogId,
+		ID beforeId,
+		int totalLimit,
+		const std::string &searchQuery,
+		int minDate,
+		int maxDate,
+		int documentType) {
+	std::lock_guard lock(databaseMutex);
+	if (!archive.unlocked || totalLimit <= 0) {
+		return {};
+	}
+	try {
+		using Row = ArchivedChatMessage;
+		const auto id = column<Row>(&Row::messageId);
+		const auto date = column<Row>(&Row::date);
+		const auto type = column<Row>(&Row::documentType);
+		const auto pattern = escapedSearchPattern(searchQuery);
+		const auto rows = openedStorage().get_all<Row>(
+			where(column<Row>(&Row::userId) == userId
+				and column<Row>(&Row::dialogId) == dialogId
+				and (id < beforeId or beforeId == 0)
+				and (date >= minDate or minDate == 0)
+				and (date <= maxDate or maxDate == 0)
+				and (type == documentType or documentType < 0)
+				and (like(column<Row>(&Row::text), pattern, "\\") or searchQuery.empty())),
+			order_by(id).desc(),
+			limit(totalLimit));
+		return std::vector<AyuMessageBase>(rows.begin(), rows.end());
+	} catch (...) {
+		LOG(("Failed to read archived chat messages."));
+		return {};
+	}
+}
+
+bool storeArchivedChatMedia(
+		ID userId,
+		ID dialogId,
+		ID mediaId,
+		int mediaType,
+		const QByteArray &bytes) {
+	std::lock_guard lock(databaseMutex);
+	if (bytes.isEmpty()) {
+		return false;
+	}
+	try {
+		if (!chatArchivingEnabled(userId, dialogId)) {
+			return false;
+		}
+		openedStorage().replace(ArchivedChatMedia{ userId, dialogId, mediaId,
+			mediaType, std::vector<char>(bytes.constData(), bytes.constData() + bytes.size()) });
+		return true;
+	} catch (...) {
+		LOG(("Failed to store encrypted chat attachment."));
+		return false;
+	}
+}
+
+QByteArray loadArchivedChatMedia(ID userId, ID dialogId, ID mediaId, int mediaType) {
+	std::lock_guard lock(databaseMutex);
+	if (!archive.unlocked) {
+		return {};
+	}
+	try {
+		const auto row = openedStorage().get_pointer<ArchivedChatMedia>(
+			userId, dialogId, mediaId, mediaType);
+		return row ? QByteArray(row->bytes.data(), row->bytes.size()) : QByteArray();
+	} catch (...) {
+		LOG(("Failed to load encrypted chat attachment."));
+		return {};
+	}
+}
+
+bool purgeArchivedChat(ID userId, ID dialogId) {
+	std::lock_guard lock(databaseMutex);
+	if (!archive.unlocked || !userId || !dialogId) {
+		return false;
+	}
+	try {
+		auto &storage = openedStorage();
+		const auto result = storage.transaction([&] {
+			using Row = ArchivedChatMessage;
+			storage.remove_all<Row>(
+				where(column<Row>(&Row::userId) == userId
+					and column<Row>(&Row::dialogId) == dialogId));
+			storage.remove_all<ArchivedChatMedia>(
+				where(c(&ArchivedChatMedia::userId) == userId
+					and c(&ArchivedChatMedia::dialogId) == dialogId));
+			storage.remove<ArchivedChat>(userId, dialogId);
+			return true;
+		});
+		archive.enabledChats.reset();
+		return result;
+	} catch (...) {
+		LOG(("Failed to clear archived chat."));
+		return false;
+	}
+}
+
 void addEditedMessage(const EditedMessage &message) {
 	std::lock_guard lock(databaseMutex);
 	try {
@@ -527,15 +805,7 @@ std::vector<DeletedMessage> getDeletedMessages(ID userId, ID dialogId, ID topicI
 			);
 		}
 
-		std::string escaped;
-		escaped.reserve(searchQuery.size());
-		for (const auto c : searchQuery) {
-			if (c == '%' || c == '_' || c == '\\') {
-				escaped += '\\';
-			}
-			escaped += c;
-		}
-		const auto pattern = "%" + escaped + "%";
+		const auto pattern = escapedSearchPattern(searchQuery);
 		return openedStorage().get_all<DeletedMessage>(
 			where(
 				column<DeletedMessage>(&DeletedMessage::userId) == userId and

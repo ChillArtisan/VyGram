@@ -1365,13 +1365,13 @@ void CommitFreshProfileTheme() {
 		return;
 	}
 	constexpr auto key = "terminal.design.version";
-	const auto version = QByteArray("2");
+	const auto version = QByteArray("4");
 	const auto savedVersion = AyuDatabase::loadPrivateSetting(key);
 	if (savedVersion == version) {
 		FreshProfileTheme = std::nullopt;
 		return;
 	}
-	if (savedVersion == QByteArray("1") && !IsTerminalTheme()) {
+	if (savedVersion != QByteArray() && !IsTerminalTheme()) {
 		// Refresh the bundled theme only if it is still selected.
 		// A different theme chosen after the first migration belongs to the user.
 		FreshProfileTheme = std::nullopt;
@@ -1384,12 +1384,13 @@ void CommitFreshProfileTheme() {
 	// background have loaded. Later manual theme choices must be preserved.
 	Core::App().settings().setSystemDarkModeEnabled(false);
 	Core::App().settings().setSystemAccentColorEnabled(false);
+	const auto preset = IsColdSteelTheme() ? ColdSteelThemePath() : TerminalThemePath();
 	if (IsNightMode()) {
-		if (!Apply(TerminalThemePath())) {
+		if (!Apply(preset)) {
 			return;
 		}
 	} else {
-		ToggleNightMode(TerminalThemePath());
+		ToggleNightMode(preset);
 	}
 	if (!IsTerminalTheme()) {
 		return;
@@ -1541,11 +1542,23 @@ QString TerminalThemePath() {
 	return u":/gui/terminal.tdesktop-theme"_q;
 }
 
+QString ColdSteelThemePath() {
+	return u":/gui/cold-steel.tdesktop-theme"_q;
+}
+
+bool IsColdSteelTheme() {
+	const auto &object = AreTestingTheme()
+		? GlobalApplying.data.object
+		: Background()->themeObject();
+	return object.pathAbsolute == ColdSteelThemePath();
+}
+
 bool IsTerminalTheme() {
 	const auto &object = AreTestingTheme()
 		? GlobalApplying.data.object
 		: Background()->themeObject();
-	return object.pathAbsolute == TerminalThemePath();
+	return object.pathAbsolute == TerminalThemePath()
+		|| object.pathAbsolute == ColdSteelThemePath();
 }
 
 bool IsNonDefaultBackground() {

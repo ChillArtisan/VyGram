@@ -6,14 +6,12 @@
 // Copyright @Radolyn, 2026
 #include "ayu/ayu_infra.h"
 
-#include "ayu/ayu_lang.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/ayu_ui_settings.h"
 #include "ayu/ayu_worker.h"
 #include "ayu/data/ayu_database.h"
 #include "ayu/ui/ayu_logo.h"
 #include "features/translator/ayu_translator.h"
-#include "lang/lang_instance.h"
 #include "ui/chat/chat_style_radius.h"
 #include "utils/rc_manager.h"
 #include "window/themes/window_theme.h"
@@ -27,17 +25,6 @@
 #endif
 
 namespace AyuInfra {
-
-void initLang() {
-	QString id = Lang::GetInstance().id();
-	QString baseId = Lang::GetInstance().baseId();
-	if (id.isEmpty()) {
-		LOG(("Language is not loaded"));
-		return;
-	}
-	AyuLanguage::init();
-	AyuLanguage::currentInstance()->fetchLanguage(id, baseId);
-}
 
 void initUiSettings() {
 	Window::Theme::InitializeFreshProfile();
@@ -87,7 +74,6 @@ void initIcon() {
 }
 
 void init() {
-	initLang();
 	initDatabase();
 	initUiSettings();
 	initIcon();

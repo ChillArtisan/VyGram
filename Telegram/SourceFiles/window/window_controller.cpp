@@ -27,6 +27,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/emoji_sets_manager.h"
 #include "window/window_session_controller.h"
 #include "window/themes/window_theme_editor.h"
+#include "window/themes/window_theme.h"
 #include "ui/boxes/confirm_box.h"
 #include "data/components/promo_suggestions.h"
 #include "data/data_thread.h"
@@ -250,9 +251,10 @@ void Controller::setupSideBar() {
 		sideBarChanged();
 	}, _sessionController->lifetime());
 
-	if (_sessionController->session().settings().dialogsFiltersEnabled()
-		&& _sessionController->enoughSpaceForFilters()
-		&& !Core::App().settings().chatFiltersHorizontal()) {
+	if (_sessionController->enoughSpaceForFilters()
+		&& (Theme::IsTerminalTheme()
+			|| (_sessionController->session().settings().dialogsFiltersEnabled()
+				&& !Core::App().settings().chatFiltersHorizontal()))) {
 		_sessionController->toggleFiltersMenu(true);
 	} else {
 		sideBarChanged();

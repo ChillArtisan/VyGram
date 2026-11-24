@@ -41,6 +41,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
+#include "ayu/ui/graphite_surface.h"
 
 
 namespace Window {
@@ -228,6 +229,11 @@ AbstractSectionWidget::AbstractSectionWidget(
 	rpl::producer<PeerData*> peerForBackground)
 : RpWidget(parent)
 , _controller(controller) {
+	auto &appearance = AyuSettings::getInstance();
+	rpl::combine(
+		appearance.graphiteChatSurfaceValue(),
+		appearance.graphiteGrainOpacityValue()
+	) | rpl::skip(1) | rpl::on_next([=] { update(); }, lifetime());
 	std::move(
 		peerForBackground
 	) | rpl::map([=](PeerData *peer) -> rpl::producer<> {
@@ -345,6 +351,16 @@ void SectionWidget::PaintBackground(
 		not_null<Ui::ChatTheme*> theme,
 		not_null<QWidget*> widget,
 		QRect clip) {
+	if (Theme::IsTerminalTheme()
+		&& theme.get() == controller->defaultChatTheme().get()
+		&& Data::IsThemeWallPaper(Theme::Background()->paper())) {
+		auto p = QPainter(widget);
+		p.fillRect(clip, st::titleBg->c);
+		auto &appearance = AyuSettings::getInstance();
+		Ui::PaintGraphiteSurface(p, widget->rect(), clip,
+			appearance.graphiteChatSurface(), appearance.graphiteGrainOpacity());
+		return;
+	}
 	if (const auto id = theme->background().giftId) {
 		const auto fillHeight = controller->content()->height();
 		const auto fill = QSize(widget->width(), fillHeight);

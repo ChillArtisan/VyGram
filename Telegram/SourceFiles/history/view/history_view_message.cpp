@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_message.h"
+#include "history/view/history_view_forum.h"
 
 #include "api/api_suggest_post.h"
 #include "api/api_transcribes.h"
@@ -77,6 +78,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/features/filters/filters_controller.h"
 #include "ayu/features/message_shot/message_shot.h"
 #include "styles/style_ayu_icons.h"
+#include "window/themes/window_theme.h"
 
 
 namespace HistoryView {
@@ -89,6 +91,13 @@ base::options::toggle UnlimitedMessageWidth({
 		"to expand beyond the default maximum width.",
 	.restartRequired = true,
 });
+
+int ForumIdWidth(const Element *view, int viewportWidth) {
+	return ForumRecord(view) && AyuSettings::getInstance().graphiteMessageIds()
+		&& viewportWidth >= style::ConvertScale(640)
+		? style::ConvertScale(64)
+		: 0;
+}
 
 constexpr auto kPlayStatusLimit = 12;
 constexpr auto kMaxWidth = (1 << 16) - 1;
@@ -498,6 +507,23 @@ struct BadgePillGeometry {
 
 } // namespace
 
+bool ForumRecord(const Element *view) {
+	return view->context() == Context::History
+		&& view->data()->isRegular()
+		&& !view->data()->isSponsored()
+		&& !view->data()->isFakeAboutView()
+		&& Window::Theme::IsTerminalTheme()
+		&& AyuSettings::getInstance().graphiteForumMessages();
+}
+
+int ForumPhotoLeft(const Element *view) {
+	return st::historyPhotoLeft + ForumIdWidth(view, view->width());
+}
+
+int ForumPhotoSize(const Element *view) {
+	return ForumRecord(view) ? style::ConvertScale(AyuSettings::getInstance().graphiteAvatarSize()) : st::msgPhotoSize;
+}
+
 const char kOptionUnlimitedMessageWidth[]
 	= "unlimited-message-width";
 
@@ -814,7 +840,7 @@ bool Message::prepareRichPageTextRect(QRect &trect) const {
 	if (_comments) {
 		inner.setHeight(inner.height() - st::historyCommentsButtonHeight);
 	}
-	trect = inner.marginsRemoved(st::msgPadding);
+	trect = inner.marginsRemoved(recordPadding());
 	const auto additionalInfoSkip = (mediaDisplayed
 		&& !media->additionalInfoString().isEmpty())
 		? st::msgDateFont->height
@@ -834,7 +860,7 @@ bool Message::prepareRichPageTextRect(QRect &trect) const {
 			trect.setHeight(
 				trect.height()
 				- st::mediaInBubbleSkip
-				+ st::msgPadding.bottom());
+				+ recordPadding().bottom());
 		} else if (mediaDisplayed) {
 			trect.setHeight(trect.height() - st::mediaInBubbleSkip);
 		}
@@ -847,10 +873,10 @@ bool Message::prepareRichPageTextRect(QRect &trect) const {
 	const auto mediaOnTop = (mediaDisplayed && media->isBubbleTop())
 		|| (entry && entry->isBubbleTop());
 	if (mediaOnBottom) {
-		trect.setHeight(trect.height() + st::msgPadding.bottom());
+		trect.setHeight(trect.height() + recordPadding().bottom());
 	}
 	if (mediaOnTop) {
-		trect.setY(trect.y() - st::msgPadding.top());
+		trect.setY(trect.y() - recordPadding().top());
 	} else {
 		if (displayFromName()) {
 			trect.setTop(trect.top() + st::msgNameFont->height);
@@ -1237,7 +1263,7 @@ void Message::animateReaction(Ui::ReactionFlyAnimationArgs &&args) {
 		if (_comments) {
 			inner.setHeight(inner.height() - st::historyCommentsButtonHeight);
 		}
-		auto trect = inner.marginsRemoved(st::msgPadding);
+		auto trect = inner.marginsRemoved(recordPadding());
 		const auto reactionsTop = (reactionsInBubble && !_viewButton)
 			? st::mediaInBubbleSkip
 			: 0;
@@ -1296,7 +1322,7 @@ QRect Message::effectIconGeometry() const {
 		if (_comments) {
 			inner.setHeight(inner.height() - st::historyCommentsButtonHeight);
 		}
-		auto trect = inner.marginsRemoved(st::msgPadding);
+		auto trect = inner.marginsRemoved(recordPadding());
 		const auto reactionsTop = (reactionsInBubble && !_viewButton)
 			? st::mediaInBubbleSkip
 			: 0;
@@ -1314,18 +1340,18 @@ QRect Message::effectIconGeometry() const {
 			}
 			trect.setHeight(trect.height() - _viewButton->height());
 			if (reactionsInBubble) {
-				trect.setHeight(trect.height() - st::mediaInBubbleSkip + st::msgPadding.bottom());
+				trect.setHeight(trect.height() - st::mediaInBubbleSkip + recordPadding().bottom());
 			} else if (mediaDisplayed) {
 				trect.setHeight(trect.height() - st::mediaInBubbleSkip);
 			}
 		}
 		if (mediaOnBottom) {
 			trect.setHeight(trect.height()
-				+ st::msgPadding.bottom()
+				+ recordPadding().bottom()
 				- viewButtonHeight());
 		}
 		if (mediaOnTop) {
-			trect.setY(trect.y() - st::msgPadding.top());
+			trect.setY(trect.y() - recordPadding().top());
 		}
 		if (mediaDisplayed && mediaOnBottom && media->customInfoLayout()) {
 			auto mediaHeight = media->height();
@@ -1335,7 +1361,7 @@ QRect Message::effectIconGeometry() const {
 		} else {
 			return fromBottomInfo({
 				inner.left() + inner.width() - (st::msgPadding.right() - st::msgDateDelta.x()),
-				inner.top() + inner.height() - (st::msgPadding.bottom() - st::msgDateDelta.y()),
+				inner.top() + inner.height() - (recordPadding().bottom() - st::msgDateDelta.y()),
 			});
 		}
 	} else if (mediaDisplayed) {
@@ -1524,13 +1550,13 @@ QSize Message::performCountOptimalSize() {
 			}
 		}
 		if (!mediaOnBottom && (!_viewButton || !reactionsInBubble)) {
-			minHeight += st::msgPadding.bottom();
+			minHeight += recordPadding().bottom();
 			if (mediaDisplayed) {
 				minHeight += st::mediaInBubbleSkip;
 			}
 		}
 		if (!mediaOnTop) {
-			minHeight += st::msgPadding.top();
+			minHeight += recordPadding().top();
 			if (mediaDisplayed) minHeight += st::mediaInBubbleSkip;
 			if (entry) minHeight += st::mediaInBubbleSkip;
 		}
@@ -1575,6 +1601,9 @@ QSize Message::performCountOptimalSize() {
 				}
 				if (Has<RightBadge>()) {
 					namew += st::msgPadding.right() + rightBadgeWidth();
+				}
+				if (ForumRecord(this)) {
+					namew += infoWidth() + 2 * st::msgServiceFont->spacew;
 				}
 				accumulate_max(maxWidth, namew);
 				accumulate_max(nonTextMax, namew);
@@ -1705,13 +1734,22 @@ void Message::refreshTopicButton() {
 	}
 }
 
+QMargins Message::recordPadding() const {
+	auto padding = st::msgPadding;
+	if (ForumRecord(this) && !media() && !logEntryOriginal() && !factcheckBlock()) {
+		padding.setTop(isAttachedToPrevious() ? 0 : style::ConvertScale(4));
+		padding.setBottom(0);
+	}
+	return padding;
+}
+
 int Message::marginTop() const {
 	auto result = 0;
 	if (!isHidden()) {
 		if (isAttachedToPrevious()) {
-			result += st::msgMarginTopAttached;
+			result += ForumRecord(this) ? style::ConvertScale(5) : st::msgMarginTopAttached;
 		} else {
-			result += st::msgMargin.top();
+			result += ForumRecord(this) ? style::ConvertScale(14) : st::msgMargin.top();
 		}
 	}
 	result += displayedDateHeight();
@@ -1738,7 +1776,7 @@ int Message::marginBottom() const {
 	if (isHidden()) {
 		return 0;
 	}
-	auto result = st::msgMargin.bottom();
+	auto result = ForumRecord(this) ? 0 : st::msgMargin.bottom();
 	if (const auto service = Get<ServicePreMessage>()) {
 		if (service->below) {
 			result += service->height;
@@ -1845,7 +1883,7 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 			localMediaBottom -= st::mediaInBubbleSkip + _reactions->height();
 		}
 		if (!mediaOnBottom && (!_viewButton || !reactionsInBubble)) {
-			localMediaBottom -= st::msgPadding.bottom();
+			localMediaBottom -= recordPadding().bottom();
 			if (mediaDisplayed) {
 				localMediaBottom -= st::mediaInBubbleSkip;
 			}
@@ -1930,6 +1968,28 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 		context.highlightInterpolateTo = g;
 		context.highlightPathCache->clear();
 	}
+	const auto forum = ForumRecord(this);
+	if (forum && !isAttachedToPrevious()) {
+		const auto left = hasFromPhoto() ? ForumPhotoLeft(this) : st::msgMargin.left();
+		const auto right = std::min(width() - st::msgMargin.left(),
+			left + style::ConvertScale(840));
+		if (right > left) {
+			p.fillRect(left, g.top() - style::ConvertScale(5), right - left,
+				st::lineWidth, st::menuSeparatorFg);
+		}
+	}
+	const auto gutter = ForumIdWidth(this, width());
+	if (gutter && IsServerMsgId(item->id)) {
+		p.save();
+		p.setFont(st::msgDateFont);
+		p.setPen(stm->msgDateFg);
+		const auto label = u"#"_q + QString::number(item->id.bare);
+		const auto column = QRect(st::historyPhotoLeft, g.top() + recordPadding().top(),
+			gutter, st::msgDateFont->height);
+		p.drawText(column, Qt::AlignLeft | Qt::AlignVCenter,
+			st::msgDateFont->elided(label, gutter));
+		p.restore();
+	}
 	if (bubble) {
 		const auto from = displayFromName() ? displayFrom() : nullptr;
 		if (from && (_fromNameVersion < from->nameVersion())) {
@@ -1974,7 +2034,7 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 					.gaps = richPageGaps,
 					.torn = rich->tornEdges.get(),
 				});
-		} else {
+		} else if (!forum || context.selected() || !mediaSelectionIntervals.empty()) {
 			Ui::PaintBubble(
 				p,
 				Ui::ComplexBubble{
@@ -1986,7 +2046,8 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 		auto inner = g;
 		paintCommentsButton(p, inner, context);
 
-		auto trect = inner.marginsRemoved(st::msgPadding);
+		auto trect = inner.marginsRemoved(recordPadding());
+		const auto headerInfo = forumHeaderInfoRect(trect);
 
 		const auto additionalInfoSkip = (mediaDisplayed
 			&& !media->additionalInfoString().isEmpty())
@@ -2027,17 +2088,17 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 			}
 			trect.setHeight(trect.height() - _viewButton->height());
 			if (reactionsInBubble) {
-				trect.setHeight(trect.height() - st::mediaInBubbleSkip + st::msgPadding.bottom());
+				trect.setHeight(trect.height() - st::mediaInBubbleSkip + recordPadding().bottom());
 			} else if (mediaDisplayed) {
 				trect.setHeight(trect.height() - st::mediaInBubbleSkip);
 			}
 		}
 
 		if (mediaOnBottom) {
-			trect.setHeight(trect.height() + st::msgPadding.bottom());
+			trect.setHeight(trect.height() + recordPadding().bottom());
 		}
 		if (mediaOnTop) {
-			trect.setY(trect.y() - st::msgPadding.top());
+			trect.setY(trect.y() - recordPadding().top());
 		} else {
 			paintFromName(p, trect, context);
 			paintEphemeralBadge(p, trect, context);
@@ -2159,7 +2220,13 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 					&& (mediaSelectionIntervals.back().top
 						+ mediaSelectionIntervals.back().height
 						>= inner.y() + inner.height()));
-			drawInfo(
+			if (!headerInfo.isEmpty()) {
+				p.setFont(st::msgDateFont);
+				p.setPen(stm->msgDateFg);
+				_bottomInfo.paint(p, headerInfo.topLeft(), width(),
+					delegate()->elementShownUnread(this), false, context);
+			} else {
+				drawInfo(
 				p,
 				context.withSelection(
 					bottomSelected ? FullSelection : TextSelection()),
@@ -2167,6 +2234,7 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 				inner.top() + inner.height(),
 				2 * inner.left() + inner.width(),
 				InfoDisplayType::Default);
+			}
 			if (context.reactionInfo && !_reactions) {
 				const auto add = QPoint(0, inner.top() + inner.height());
 				context.reactionInfo->position = add;
@@ -2568,6 +2636,40 @@ void Message::paintCommentsButton(
 	}
 }
 
+QRect Message::forumHeaderInfoRect(QRect header) const {
+	if (!ForumRecord(this) || !displayFromName() || !needInfoDisplay()
+		|| hidesBottomInfo() || data()->effectId() || logEntryOriginal()
+		|| factcheckBlock() || (media() && media()->isDisplayed()
+			&& (media()->isBubbleTop() || media()->customInfoLayout()))) {
+		return {};
+	}
+	const auto size = _bottomInfo.currentSize();
+	if (size.isEmpty() || size.height() > st::msgNameFont->height) {
+		return {};
+	}
+	const auto from = displayFrom();
+	validateFromNameText(from);
+	const auto &name = from ? _fromName : data()->displayHiddenSenderInfo()->nameText();
+	const auto space = st::msgServiceFont->spacew;
+	auto offset = name.maxWidth() + 2 * space;
+	if (_fromNameStatus && !AyuSettings::getInstance().hidePremiumStatuses()) {
+		offset += st::dialogsPremiumIcon.icon.width() + space;
+	}
+	if (const auto via = data()->Get<HistoryMessageVia>(); via && !displayForwardedFrom()) {
+		offset += via->width + space;
+	}
+	if (const auto guest = data()->Get<HistoryMessageGuestChat>()) {
+		offset += guest->width + space;
+	}
+	const auto badge = rightBadgeWidth();
+	if (offset + size.width() > header.width() - (badge ? badge + st::msgPadding.right() : 0)) {
+		return {};
+	}
+	return QRect(header.x() + offset,
+		header.y() + (st::msgNameFont->height - size.height()) / 2,
+		size.width(), size.height());
+}
+
 void Message::paintFromName(
 		Painter &p,
 		QRect &trect,
@@ -2587,10 +2689,9 @@ void Message::paintFromName(
 	const auto from = displayFrom();
 	const auto info = from ? nullptr : item->displayHiddenSenderInfo();
 	Assert(from || info);
-	const auto nameFg = FromNameFg(
-		context,
-		colorIndex(),
-		colorCollectible());
+	const auto nameFg = ForumRecord(this) && !context.selected()
+		? st::windowActiveTextFg->c
+		: FromNameFg(context, colorIndex(), colorCollectible());
 	const auto nameText = [&] {
 		if (from) {
 			validateFromNameText(from);
@@ -3346,7 +3447,7 @@ PointState Message::pointState(QPoint point) const {
 				g.setHeight(g.height() - st::historyCommentsButtonHeight);
 			}
 
-			auto trect = g.marginsRemoved(st::msgPadding);
+			auto trect = g.marginsRemoved(recordPadding());
 			if (reactionsInBubble) {
 				const auto reactionsHeight = (_viewButton ? 0 : st::mediaInBubbleSkip)
 					+ _reactions->height();
@@ -3355,16 +3456,16 @@ PointState Message::pointState(QPoint point) const {
 			if (_viewButton) {
 				trect.setHeight(trect.height() - _viewButton->height());
 				if (reactionsInBubble) {
-					trect.setHeight(trect.height() + st::msgPadding.bottom());
+					trect.setHeight(trect.height() + recordPadding().bottom());
 				} else if (mediaDisplayed) {
 					trect.setHeight(trect.height() - st::mediaInBubbleSkip);
 				}
 			}
 			if (mediaOnBottom) {
-				trect.setHeight(trect.height() + st::msgPadding.bottom());
+				trect.setHeight(trect.height() + recordPadding().bottom());
 			}
 			//if (mediaOnTop) {
-			//	trect.setY(trect.y() - st::msgPadding.top());
+			//	trect.setY(trect.y() - recordPadding().top());
 			//} else {
 			//	if (getStateFromName(point, trect, &result)) return result;
 			//	if (getStateTopicButton(point, trect, &result)) return result;
@@ -3884,7 +3985,7 @@ void Message::createLinkRippleMask(
 }
 
 void Message::createTopicButtonRipple() {
-	const auto geometry = countGeometry().marginsRemoved(st::msgPadding);
+	const auto geometry = countGeometry().marginsRemoved(recordPadding());
 	const auto availableWidth = geometry.width();
 	const auto padding = st::topicButtonPadding;
 	const auto height = padding.top()
@@ -3960,6 +4061,9 @@ bool Message::hasFromPhoto() const {
 			if (const auto channel = item->history()->peer->asBroadcast()) {
 				return channel->signatureProfiles();
 			}
+		}
+		if (ForumRecord(this)) {
+			return displayFrom() || item->displayHiddenSenderInfo();
 		}
 		const auto mode = delegate()->elementChatMode();
 		if (mode != ElementChatMode::Default) {
@@ -4059,7 +4163,11 @@ TextState Message::textState(
 			AddTextStateOffset(&result, visibleMediaTextLen + visibleTextLen);
 			return result;
 		}
-		auto trect = inner.marginsRemoved(st::msgPadding);
+		auto trect = inner.marginsRemoved(recordPadding());
+		const auto headerInfo = forumHeaderInfoRect(trect);
+		if (headerInfo.contains(point)) {
+			return _bottomInfo.textState(this, point - headerInfo.topLeft());
+		}
 		const auto additionalInfoSkip = (mediaDisplayed
 			&& !media->additionalInfoString().isEmpty())
 			? st::msgDateFont->height
@@ -4098,16 +4206,16 @@ TextState Message::textState(
 			}
 			trect.setHeight(trect.height() - _viewButton->height());
 			if (reactionsInBubble) {
-				trect.setHeight(trect.height() - st::mediaInBubbleSkip + st::msgPadding.bottom());
+				trect.setHeight(trect.height() - st::mediaInBubbleSkip + recordPadding().bottom());
 			} else if (mediaDisplayed) {
 				trect.setHeight(trect.height() - st::mediaInBubbleSkip);
 			}
 		}
 		if (mediaOnBottom) {
-			trect.setHeight(trect.height() + st::msgPadding.bottom());
+			trect.setHeight(trect.height() + recordPadding().bottom());
 		}
 		if (mediaOnTop) {
-			trect.setY(trect.y() - st::msgPadding.top());
+			trect.setY(trect.y() - recordPadding().top());
 		} else if (inBubble) {
 			if (getStateFromName(point, trect, &result)) {
 				return result;
@@ -4161,6 +4269,9 @@ TextState Message::textState(
 		}
 
 		auto checkBottomInfoState = [&] {
+			if (!headerInfo.isEmpty()) {
+				return;
+			}
 			if (mediaOnBottom
 				&& (check || entry || media->customInfoLayout())) {
 				return;
@@ -4950,9 +5061,9 @@ void Message::updatePressed(QPoint point) {
 
 	if (drawBubble()) {
 		auto mediaDisplayed = media && media->isDisplayed();
-		auto trect = g.marginsAdded(-st::msgPadding);
+		auto trect = g.marginsAdded(-recordPadding());
 		if (mediaDisplayed && media->isBubbleTop()) {
-			trect.setY(trect.y() - st::msgPadding.top());
+			trect.setY(trect.y() - recordPadding().top());
 		} else {
 			if (displayFromName()) {
 				trect.setTop(trect.top() + st::msgNameFont->height);
@@ -4983,7 +5094,7 @@ void Message::updatePressed(QPoint point) {
 			}
 		}
 		if (mediaDisplayed && media->isBubbleBottom()) {
-			trect.setHeight(trect.height() + st::msgPadding.bottom());
+			trect.setHeight(trect.height() + recordPadding().bottom());
 		}
 
 		if (mediaDisplayed) {
@@ -5480,7 +5591,7 @@ void Message::drawInfo(
 	switch (type) {
 	case InfoDisplayType::Default:
 		infoRight -= st::msgPadding.right() - st::msgDateDelta.x();
-		infoBottom -= st::msgPadding.bottom() - st::msgDateDelta.y();
+		infoBottom -= recordPadding().bottom() - st::msgDateDelta.y();
 		p.setPen(stm->msgDateFg);
 	break;
 	case InfoDisplayType::Image:
@@ -5529,7 +5640,7 @@ TextState Message::bottomInfoTextState(
 	switch (type) {
 	case InfoDisplayType::Default:
 		infoRight -= st::msgPadding.right() - st::msgDateDelta.x();
-		infoBottom -= st::msgPadding.bottom() - st::msgDateDelta.y();
+		infoBottom -= recordPadding().bottom() - st::msgDateDelta.y();
 		break;
 	case InfoDisplayType::Image:
 		infoRight -= st::msgDateImgDelta + st::msgDateImgPadding.x();
@@ -5580,11 +5691,13 @@ void Message::validateFromNameText(PeerData *from) const {
 		return;
 	}
 	const auto version = from->nameVersion();
-	if (_fromNameVersion < version) {
+	const auto self = from->isSelf() && history()->peer->isUser() && ForumRecord(this);
+	if (_fromNameVersion < version || _forumSelfName != self) {
 		_fromNameVersion = version;
+		_forumSelfName = self;
 		_fromName.setText(
 			st::msgNameStyle,
-			from->name(),
+			self ? tr::lng_from_you(tr::now) : from->name(),
 			Ui::NameTextOptions());
 	}
 	if (from->isPremium()
@@ -5857,6 +5970,10 @@ bool Message::hasFromName() const {
 	case Context::ScheduledTopic: {
 		const auto item = data();
 		const auto peer = item->history()->peer;
+		if (ForumRecord(this) && !item->isPostHidingAuthor()
+			&& !isCommentsRootView() && (displayFrom() || item->displayHiddenSenderInfo())) {
+			return !media() || !media()->hideFromName();
+		}
 		if (hasOutLayout() && !item->from()->isChannel()) {
 			if (peer->isSelf()) {
 				if (const auto forwarded = item->Get<HistoryMessageForwarded>()) {
@@ -6516,7 +6633,7 @@ QRect Message::innerGeometry() const {
 			amount = std::min(amount, result.height());
 			result.setTop(result.top() + amount);
 		};
-		cut(st::msgPadding.top() + st::mediaInBubbleSkip);
+		cut(recordPadding().top() + st::mediaInBubbleSkip);
 
 		if (displayFromName()) {
 			// See paintFromName().
@@ -6567,13 +6684,16 @@ QRect Message::countGeometry() const {
 	const auto wideSkip = useMoreSpace
 		? st::msgMargin.left()
 		: st::msgMargin.right();
-	const auto availableWidth = width()
+	const auto forum = ForumRecord(this);
+	const auto gutter = ForumIdWidth(this, width());
+	const auto availableWidth = width() - gutter
+		- ((forum && hasFromPhoto()) ? ForumPhotoSize(this) : 0)
 		- st::msgMargin.left()
 		- (centeredView ? st::msgMargin.left() : wideSkip);
-	auto contentLeft = hasRightLayout() ? wideSkip : st::msgMargin.left();
+	auto contentLeft = (!forum && hasRightLayout() ? wideSkip : st::msgMargin.left()) + gutter;
 	auto contentWidth = availableWidth;
 	if (hasFromPhoto()) {
-		contentLeft += st::msgPhotoSkip;
+		contentLeft += forum ? ForumPhotoSize(this) - style::ConvertScale(8) : st::msgPhotoSkip;
 		if (const auto size = rightActionSize()) {
 			contentWidth -= size->width() + (st::msgPhotoSkip - st::historyFastShareSize);
 		}
@@ -6604,7 +6724,7 @@ QRect Message::countGeometry() const {
 	}
 	if (contentWidth < availableWidth
 		&& delegate()->elementChatMode() != ElementChatMode::Wide) {
-		if (outbg) {
+		if (outbg && !forum) {
 			contentLeft += availableWidth - contentWidth;
 		} else if (centeredView) {
 			contentLeft += (availableWidth - contentWidth) / 2;
@@ -6703,7 +6823,8 @@ int Message::resizeContentGetHeight(int newWidth) {
 	const auto wideSkip = useMoreSpace
 		? st::msgMargin.left()
 		: st::msgMargin.right();
-	auto contentWidth = newWidth
+	auto contentWidth = newWidth - ForumIdWidth(this, newWidth)
+		- ((ForumRecord(this) && hasFromPhoto()) ? ForumPhotoSize(this) : 0)
 		- st::msgMargin.left()
 		- (centeredView ? st::msgMargin.left() : wideSkip);
 	if (hasFromPhoto()) {
@@ -6715,7 +6836,7 @@ int Message::resizeContentGetHeight(int newWidth) {
 	_bubbleWidthLimit = (UnlimitedMessageWidth.value() && !mediaDisplayed)
 		? 0x3FFFFFF
 		: std::max({
-			st::msgMaxWidth,
+			ForumRecord(this) ? style::ConvertScale(840) : st::msgMaxWidth,
 			monospaceMaxWidth(),
 			mediaDisplayed ? media->bubbleWidthLimit() : 0,
 		});
@@ -6825,13 +6946,13 @@ int Message::resizeContentGetHeight(int newWidth) {
 				}
 			}
 			if (!mediaOnBottom && (!_viewButton || !reactionsInBubble)) {
-				newHeight += st::msgPadding.bottom();
+				newHeight += recordPadding().bottom();
 				if (mediaDisplayed) {
 					newHeight += st::mediaInBubbleSkip;
 				}
 			}
 			if (!mediaOnTop) {
-				newHeight += st::msgPadding.top();
+				newHeight += recordPadding().top();
 				if (mediaDisplayed) newHeight += st::mediaInBubbleSkip;
 				if (entry) newHeight += st::mediaInBubbleSkip;
 			}
@@ -6931,6 +7052,9 @@ int Message::resizeContentGetHeight(int newWidth) {
 		keyboard->resize(contentWidth, keyboardHeight - st::msgBotKbButton.margin);
 	}
 
+	if (ForumRecord(this) && hasFromPhoto() && !isAttachedToPrevious()) {
+		accumulate_max(newHeight, ForumPhotoSize(this));
+	}
 	newHeight += marginTop() + marginBottom();
 	return newHeight;
 }

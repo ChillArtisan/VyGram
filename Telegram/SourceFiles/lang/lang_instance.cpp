@@ -574,6 +574,7 @@ void Instance::fillFromCustomContent(
 	_pluralId = PluralCodeForCustom(absolutePath, relativePath);
 	_name = _nativeName = QString();
 	loadFromCustomContent(absolutePath, relativePath, content);
+	updatePluralRules();
 	updateChoosingStickerReplacement();
 
 	_idChanges.fire_copy(_id);
@@ -762,6 +763,29 @@ void Instance::updatePluralRules() {
 			: LanguageIdOrDefault(_id);
 	}
 	UpdatePluralRules(_pluralId);
+	if (_derived || _id.startsWith(u"#TEST_"_q)) {
+		return;
+	}
+	const auto russian = _id == u"ru"_q || _id.startsWith(u"ru-"_q)
+		|| baseId() == u"ru"_q || _pluralId == u"ru"_q;
+	static constexpr std::pair<const char*, const char*> kTranslations[] = {
+#include "ayu/ayu_lang_ru.inc"
+	};
+	for (const auto &[key, translation] : kTranslations) {
+		if (russian) {
+			ParseKeyValue(QByteArray(key), QByteArray(translation),
+				[this](ushort index, QString &&text) {
+					_nonDefaultSet[index] = 1;
+					_values[index] = std::move(text);
+				});
+		} else {
+			const auto index = GetKeyIndex(QLatin1String(key));
+			if (index != kKeysCount) {
+				_nonDefaultSet[index] = 0;
+				_values[index] = GetOriginalValue(index);
+			}
+		}
+	}
 }
 
 void Instance::resetValue(const QByteArray &key) {

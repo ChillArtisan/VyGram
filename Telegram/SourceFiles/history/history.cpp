@@ -86,6 +86,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // AyuGram includes
 #include "ayu/ayu_settings.h"
 #include "ayu/ayu_state.h"
+#include "ayu/data/messages_storage.h"
 
 
 namespace {
@@ -592,11 +593,13 @@ not_null<HistoryItem*> History::createItem(
 		if (result->needsUpdateForVideoQualities(message)) {
 			owner().updateEditedMessage(message);
 		}
+		AyuMessages::archiveChatMessage(result);
 		return result;
 	}
 	const auto result = message.match([&](const auto &data) {
 		return makeMessage(id, data, localFlags);
 	});
+	AyuMessages::archiveChatMessage(result);
 	if (newMessage && result->out() && result->isRegular()) {
 		session().topPeers().increment(peer, result->date());
 		if (result->starsPaid()) {

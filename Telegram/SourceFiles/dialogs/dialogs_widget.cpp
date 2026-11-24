@@ -7,6 +7,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/dialogs_widget.h"
 
+#include "ayu/ui/boxes/command_palette_box.h"
+#include "boxes/peer_list_controllers.h"
+#include "styles/style_menu_icons.h"
+
 #include "base/call_delayed.h"
 #include "base/qt/qt_key_modifiers.h"
 #include "base/options.h"
@@ -95,6 +99,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/profile/info_profile_values.h"
 #include "info/info_memento.h"
 #include "inline_bots/bot_attach_web_view.h"
+#include "ui/widgets/labels.h"
+#include "window/themes/window_theme.h"
+#include "styles/style_boxes.h"
 #include "styles/style_dialogs.h"
 #include "styles/style_chat.h"
 #include "styles/style_chat_helpers.h"
@@ -464,6 +471,10 @@ Widget::Widget(
 	+ st::defaultDialogRow.photoSize
 	+ st::defaultDialogRow.padding.left())
 , _searchControls(this)
+, _chatsHeading(_searchControls, tr::lng_settings_messages(), st::postsSearchIntroTitle)
+, _newChat(_searchControls, st::dialogsMenuToggle)
+, _searchGlass(_searchControls)
+, _paletteShortcut(_searchControls)
 , _mainMenu({
 	.toggle = object_ptr<Ui::IconButton>(
 		_searchControls,
@@ -684,9 +695,40 @@ Widget::Widget(
 		_search->setFocusFast();
 	}, lifetime());
 
+	_newChat->setIconOverride(&st::menuIconAdd);
+	_newChat->setAccessibleName(tr::lng_bot_new_chat(tr::now));
+	_newChat->setToolTip(tr::lng_bot_new_chat(tr::now));
+	_newChat->setClickedCallback([=] {
+		const auto window = this->controller();
+		window->show(Box<PeerListBox>(
+			std::make_unique<ChooseRecipientBoxController>(
+				&window->session(),
+				[=](not_null<Data::Thread*> thread) {
+					window->hideLayer();
+					window->showThread(thread);
+				}),
+			[](not_null<PeerListBox*> box) {
+				box->peerListSetTitle(tr::lng_bot_new_chat());
+				box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
+			}));
+	});
+	_searchGlass->setAttribute(Qt::WA_TransparentForMouseEvents);
+	_searchGlass->paintRequest() | rpl::on_next([=] {
+		auto p = QPainter(_searchGlass);
+		st::menuIconSearch.paintInCenter(p, _searchGlass->rect());
+	}, lifetime());
+	_paletteShortcut->setAccessibleName(u"Ctrl + K"_q);
+	_paletteShortcut->setPointerCursor(true);
+	_paletteShortcut->paintRequest() | rpl::on_next([=] {
+		auto p = QPainter(_paletteShortcut);
+		p.setPen(st::windowSubTextFg->c);
+		p.setFont(st::normalFont);
+		p.drawText(_paletteShortcut->rect(), Qt::AlignCenter, u"Ctrl + K"_q);
+	}, lifetime());
+	_paletteShortcut->setClickedCallback([=] { Ayu::ShowCommandPalette(this->controller()); });
 	_search->changes(
 	) | rpl::on_next([=] {
-		crl::on_main(this, [=] { applySearchUpdate(); });
+		crl::on_main(this, [=] { applySearchUpdate(); updateControlsGeometry(); });
 	}, _search->lifetime());
 
 	_search->submits(
@@ -4631,11 +4673,7 @@ void Widget::updateSearchFromVisibility(bool fast) {
 	if (_subsectionTopBar) {
 		_subsectionTopBar->searchEnableChooseFromUser(true, visible);
 	} else if (changed) {
-		auto additional = QMargins();
-		if (visible) {
-			additional.setRight(_chooseFromUser->width());
-		}
-		_search->setAdditionalMargins(additional);
+		updateControlsGeometry();
 	}
 }
 
@@ -4663,7 +4701,12 @@ void Widget::updateControlsGeometry() {
 	const auto filterWidth = std::max(ratiow, smallw)
 		- filterLeft
 		- filterRight;
-	const auto filterAreaHeight = st::topBarHeight;
+	const auto heading = Window::Theme::IsTerminalTheme()
+		&& !_subsectionTopBar && ratiow >= st::columnMinimalWidthLeft;
+	const auto headingHeight = heading ? style::ConvertScale(36) : 0;
+	_chatsHeading->setVisible(heading);
+	_chatsHeading->moveToLeft(filterLeft, style::ConvertScale(8));
+	const auto filterAreaHeight = st::topBarHeight + headingHeight;
 	_searchControls->setGeometry(0, filterAreaTop, ratiow, filterAreaHeight);
 	if (_subsectionTopBar) {
 		_subsectionTopBar->setGeometryWithNarrowRatio(
@@ -4672,13 +4715,34 @@ void Widget::updateControlsGeometry() {
 			narrowRatio);
 	}
 
-	auto filterTop = (filterAreaHeight - _search->height()) / 2;
+	auto filterTop = headingHeight + (st::topBarHeight - _search->height()) / 2;
 	filterLeft = anim::interpolate(filterLeft, _narrowWidth, narrowRatio);
 	_search->setGeometryToLeft(
 		filterLeft,
 		filterTop,
 		filterWidth,
 		_search->height());
+
+	_newChat->setVisible(heading);
+	_newChat->moveToRight(filterRight, (headingHeight - _newChat->height()) / 2);
+	const auto shortcut = heading && _search->getLastText().isEmpty()
+		&& !_chooseFromUser->toggled() && !_jumpToDate->toggled();
+	const auto shortcutWidth = st::normalFont->width(u"Ctrl + K"_q) + style::ConvertScale(12);
+	const auto glassWidth = style::ConvertScale(26);
+	_search->setAdditionalMargins({
+		heading ? glassWidth : 0,
+		0,
+		_chooseFromUser->toggled() ? _chooseFromUser->width() : (shortcut ? shortcutWidth : 0),
+		0,
+	});
+	_searchGlass->setVisible(heading);
+	_searchGlass->setGeometryToLeft(filterLeft + style::ConvertScale(4),
+		filterTop, glassWidth, _search->height());
+	_paletteShortcut->setVisible(shortcut);
+	_paletteShortcut->setGeometryToLeft(filterLeft + filterWidth - shortcutWidth - style::ConvertScale(4),
+		filterTop, shortcutWidth, _search->height());
+	_searchGlass->raise();
+	_paletteShortcut->raise();
 
 	auto mainMenuLeft = anim::interpolate(
 		st::dialogsFilterPadding.x(),

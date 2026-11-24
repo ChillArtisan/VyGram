@@ -55,6 +55,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/features/filters/filters_controller.h"
 #include "styles/style_ayu_icons.h"
 #include "window/themes/window_theme.h"
+#include "ayu/ui/graphite_surface.h"
 
 
 namespace Dialogs::Ui {
@@ -495,7 +496,16 @@ void PaintRow(
 		p.translate(swipeMirrored ? swipeTranslation : -swipeTranslation, 0);
 	}
 	p.fillRect(geometry, bg);
+	if (context.graphiteSurface && !context.active && !context.selected) {
+		::Ui::PaintGraphiteSurface(p, context.graphiteSurfaceBounds, geometry,
+			context.graphiteSurface, context.graphiteGrain);
+	}
 	if (Window::Theme::IsTerminalTheme()) {
+		if (context.active) {
+			const auto stripe = 3 * st::lineWidth;
+			p.fillRect(style::RightToLeft() ? geometry.right() + 1 - stripe : geometry.x(),
+				geometry.y(), stripe, geometry.height(), st::windowBgActive);
+		}
 		p.fillRect(
 			geometry.x(),
 			geometry.bottom() + 1 - st::lineWidth,

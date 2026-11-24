@@ -199,6 +199,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/profile/info_profile_values.h" // SharedMediaCountValue.
 #include "chat_helpers/emoji_suggestions_widget.h"
 #include "core/shortcuts.h"
+#include "ayu/ui/boxes/command_palette_box.h"
 #include "core/ui_integration.h"
 #include "support/support_common.h"
 #include "support/support_autocomplete.h"
@@ -218,6 +219,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QMimeData>
 
 // AyuGram includes
+#include "ayu/ui/ayu_logo.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/features/filters/filters_cache_controller.h"
 #include "ayu/utils/telegram_helpers.h"
@@ -711,7 +713,13 @@ HistoryWidget::HistoryWidget(
 
 	_botKeyboardShow->addClickHandler([=] { toggleKeyboard(); });
 	_botKeyboardHide->addClickHandler([=] { toggleKeyboard(); });
-	_botCommandStart->addClickHandler([=] { startBotCommand(); });
+	_botCommandStart->addClickHandler([=] {
+		if (_composePaletteShortcut) {
+			Ayu::ShowCommandPalette(this->controller());
+		} else {
+			startBotCommand();
+		}
+	});
 
 	_topShadow->hide();
 
@@ -7010,6 +7018,16 @@ bool HistoryWidget::updateCmdStartShown() {
 			}
 		}
 	}
+	const auto palette = Window::Theme::IsTerminalTheme() && _history && !bot
+		&& !cmdStartShown && !_editMsgId && !_keyboard->hasMarkup() && !_keyboard->forceReply()
+		&& !isBlocked() && !hasSendableContent();
+	if (palette != _composePaletteShortcut) {
+		_composePaletteShortcut = palette;
+		_botCommandStart->setAccessibleName(palette
+			? tr::lng_vygram_command_palette(tr::now)
+			: tr::lng_bot_commands_start(tr::now));
+	}
+	cmdStartShown = cmdStartShown || palette;
 	constexpr auto kSmallMenuAfter = 10;
 	const auto commandsChanged = (_cmdStartShown != cmdStartShown);
 	auto buttonChanged = false;
@@ -7602,8 +7620,9 @@ void HistoryWidget::moveFieldControls() {
 // (_attachDocument|_attachPhoto) _field (_ttlInfo) (_scheduled) (_giftToUser) (_silent|_cmdStart|_kbShow) (_toggleSuggestPost) (_kbHide|_tabbedSelectorToggle) _send
 // (_botStart|_unblock|_joinChannel|_muteUnmute|_reportMessages)
 
-	auto buttonsBottom = bottom - _attachToggle->height();
-	auto left = st::historySendRight;
+	const auto inset = HistoryView::Controls::TerminalComposerInset(width());
+	auto buttonsBottom = bottom - _attachToggle->height() - inset / 2;
+	auto left = st::historySendRight + inset;
 	if (_botMenu.button) {
 		const auto skip = st::historyBotMenuSkip;
 		_botMenu.button->moveToLeft(left + skip, buttonsBottom + skip);
@@ -7614,11 +7633,14 @@ void HistoryWidget::moveFieldControls() {
 	}
 	if (settings.showAttachButtonInMessageField()) {
 		_attachToggle->moveToLeft(left, buttonsBottom);
-	left += _attachToggle->width();
+		left += _attachToggle->width();
 	}
 	if (_sendAs) {
 		_sendAs->moveToLeft(left, buttonsBottom);
 		left += _sendAs->width();
+	}
+	if (inset) {
+		left += style::ConvertScale(18);
 	}
 	const auto fieldTop = bottom - fieldHeight() - st::historySendPadding;
 	_field->moveToLeft(left, fieldTop);
@@ -7628,7 +7650,7 @@ void HistoryWidget::moveFieldControls() {
 			left,
 			bottom - fieldHeight() - st::historySendPadding);
 	}
-	auto right = st::historySendRight;
+	auto right = st::historySendRight + inset;
 	_send->moveToRight(right, buttonsBottom); right += _send->width();
 	_voiceRecordBar->moveToLeft(0, bottom - _voiceRecordBar->height());
 	_tabbedSelectorToggle->moveToRight(right, buttonsBottom);
@@ -7733,6 +7755,9 @@ void HistoryWidget::updateFieldSize() {
 
 	if (_fieldDisabled) {
 		_fieldDisabled->resize(width(), st::historySendSize.height());
+	}
+	if (const auto inset = HistoryView::Controls::TerminalComposerInset(width())) {
+		fieldWidth = std::max(1, fieldWidth - 2 * inset - style::ConvertScale(18));
 	}
 	if (_field->width() != fieldWidth) {
 		_field->resize(fieldWidth, _field->height());
@@ -9113,7 +9138,10 @@ int HistoryWidget::computeMaxFieldHeight() const {
 			: 0)
 		- (2 * st::historySendPadding)
 		- st::historyReplyHeight; // at least this height for history.
-	return std::min(st::historyComposeFieldMaxHeight, available);
+	const auto cap = Window::Theme::IsTerminalTheme()
+		? style::ConvertScale(180) - 2 * st::historySendPadding
+		: st::historyComposeFieldMaxHeight;
+	return std::min(cap, available);
 }
 
 bool HistoryWidget::cornerButtonsIgnoreVisibility() {
@@ -11349,19 +11377,13 @@ void HistoryWidget::drawField(Painter &p, const QRect &rect) {
 	p.setInactive(
 		controller()->isGifPausedAtLeastFor(Window::GifPauseReason::Any));
 	p.fillRect(myrtlrect(0, backy, width(), backh), st::historyReplyBg);
-	if (Window::Theme::IsTerminalTheme() && !_field->isHidden()) {
-		const auto padding = st::terminalComposeFramePadding;
-		const auto frame = _field->geometry().marginsAdded(QMargins(
-			padding.left(),
-			padding.top(),
-			padding.right(),
-			padding.bottom()));
-		p.save();
-		p.setPen(QPen(st::windowBgRipple->c, st::lineWidth));
-		p.setBrush(Qt::NoBrush);
-		p.drawRect(frame);
-		p.restore();
+	if (!_field->isHidden()) {
+		HistoryView::Controls::PaintTerminalComposer(p,
+			QRect(0, _field->y() - st::historySendPadding, width(),
+				fieldHeight() + 2 * st::historySendPadding),
+			_field->geometry(), _field->hasFocus());
 	}
+
 
 	const auto media = (!_previewDrawPreview && drawMsgText)
 		? drawMsgText->media()
@@ -11654,6 +11676,34 @@ void HistoryWidget::paintEvent(QPaintEvent *e) {
 				drawField(p, clip);
 			}
 		}
+	} else if (Window::Theme::IsTerminalTheme()) {
+		const auto side = style::ConvertScale(60);
+		const auto center = rect().center();
+		const auto logo = QRect(center.x() - side / 2, center.y() - side - style::ConvertScale(12), side, side);
+		p.setRenderHint(QPainter::SmoothPixmapTransform);
+		p.drawImage(logo, AyuAssets::brandLogo());
+		p.setPen(st::windowFg);
+		p.setFont(st::msgNameFont);
+		const auto top = center.y() + style::ConvertScale(4);
+		p.drawText(QRect(0, top, width(), st::msgNameFont->height), Qt::AlignCenter,
+			tr::lng_willbe_history(tr::now));
+		auto hints = QStringList();
+		const auto shortcut = [&](Shortcuts::Command command, const QString &label) {
+			for (const auto &[keys, commands] : Shortcuts::KeysCurrents()) {
+				if (commands.contains(command)) {
+					hints.push_back(label + u"  "_q + keys.toString(QKeySequence::NativeText));
+					break;
+				}
+			}
+		};
+		shortcut(Shortcuts::Command::Palette, tr::lng_vygram_command_palette(tr::now));
+		shortcut(Shortcuts::Command::OpenSettings, tr::lng_menu_settings(tr::now));
+		p.setPen(st::windowSubTextFg);
+		p.setFont(st::msgDateFont);
+		const auto hint = hints.join(u"     "_q);
+		p.drawText(QRect(0, top + st::msgNameFont->height + style::ConvertScale(8),
+			width(), st::msgDateFont->height), Qt::AlignCenter,
+			st::msgDateFont->elided(hint, std::max(0, width() - style::ConvertScale(24))));
 	} else {
 		const auto w = 0
 			+ st::msgServiceFont->width(tr::lng_willbe_history(tr::now))

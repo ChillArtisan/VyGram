@@ -42,7 +42,9 @@ void loadAppIco() {
 QImage CreateImage(const QString &name, const QSize resultImageSize, const int padding = 0) {
 	const auto iconSize = resultImageSize.shrunkBy(QMargins(padding, padding, padding, padding));
 
-	const auto pngPath = qsl(":/gui/art/ayu/%1/app.png").arg(name);
+	const auto pngPath = (name == DEFAULT_ICON)
+		? u":/gui/graphite/mark.png"_q
+		: qsl(":/gui/art/ayu/%1/app.png").arg(name);
 	if (QFile::exists(pngPath)) {
 		const auto loaded = QImage(pngPath).scaled(iconSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
 		auto res = QImage(
@@ -106,6 +108,11 @@ QImage loadPreview(const QString &name) {
 
 QString currentAppLogoName() {
 	return LAST_LOADED_NAME;
+}
+
+const QImage &brandLogo() {
+	static const auto image = QImage(u":/gui/graphite/mark.png"_q);
+	return image;
 }
 
 QImage currentAppLogo() {

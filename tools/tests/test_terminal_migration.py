@@ -73,6 +73,8 @@ void sync() { s.events.push_back("sync"); }
 }
 bool IsNightMode() { return s.night; }
 std::string TerminalThemePath() { return "terminal"; }
+std::string ColdSteelThemePath() { return "steel"; }
+bool IsColdSteelTheme() { return false; }
 bool Apply(const std::string &path) {
     if (path != "terminal") throw std::runtime_error("apply path");
     ++s.apply;
@@ -98,7 +100,7 @@ void preset() {
         "preset geometry");
     check(s.font == u"JetBrains Mono", "preset font");
     check(s.protect == 1 && s.writes == 1 && s.keep == 1, "persist preset");
-    check(s.marker == "2" && s.stores == 1, "persist marker");
+    check(s.marker == "4" && s.stores == 1, "persist marker");
     check(s.night && !s.systemDark && !s.systemAccent && !FreshProfileTheme, "committed state");
     check(s.events == std::vector<std::string>{"keep", "protected", "settings", "sync", "marker"},
         "commit ordering");
@@ -118,7 +120,7 @@ int run_tests() {
         std::cout << "PASS existing " << (night ? "night" : "day") << " migration\n";
     }
     for (bool night : {false, true}) {
-        reset(); s.marker = "2"; s.night = night;
+        reset(); s.marker = "4"; s.night = night;
         CommitFreshProfileTheme();
         check(s.night == night && !s.terminal && s.apply == 0 && s.toggle == 0,
             "marker preserves manual theme");
@@ -136,7 +138,7 @@ int run_tests() {
         check(s.systemDark && s.systemAccent && s.radius == 7 && s.corners == 9
             && s.font == u"User Font" && !s.tail && !s.single,
             "v1 manual theme preferences untouched");
-        check(s.marker == "2" && s.stores == 1 && s.keep == 0 && s.protect == 0
+        check(s.marker == "4" && s.stores == 1 && s.keep == 0 && s.protect == 0
             && s.writes == 0 && s.events == std::vector<std::string>{"marker"},
             "v1 manual theme only advances marker");
     }
@@ -146,7 +148,7 @@ int run_tests() {
         s.radius = 7; s.corners = 9; s.font = u"User Font";
         CommitFreshProfileTheme();
         check(s.apply == (night ? 1 : 0) && s.toggle == (night ? 0 : 1)
-            && s.keep == 1 && s.marker == "2", "v1 Terminal bundle refreshed");
+            && s.keep == 1 && s.marker == "4", "v1 Terminal bundle refreshed");
         check(s.radius == 7 && s.corners == 9 && s.font == u"User Font" && !s.tail
             && !s.single && s.protect == 1, "v1 Terminal keeps user preferences");
         check(s.events == std::vector<std::string>{"keep", "protected", "settings", "sync", "marker"},

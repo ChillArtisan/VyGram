@@ -68,6 +68,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_window.h"
 #include "styles/style_dialogs.h"
 #include "styles/style_chat.h"
+#include "window/themes/window_theme.h"
 #include "styles/style_info.h"
 
 #include <QtGui/QWindow>
@@ -560,6 +561,9 @@ void TopBarWidget::paintEvent(QPaintEvent *e) {
 	const auto slidingTop = std::max(selectedButtonsTop, searchFieldTop);
 
 	p.fillRect(QRect(0, 0, width(), st::topBarHeight), st::topBarBg);
+	if (Window::Theme::IsTerminalTheme()) {
+		p.fillRect(0, st::topBarHeight - st::lineWidth, width(), st::lineWidth, st::menuSeparatorFg);
+	}
 	if (slidingTop < 0) {
 		p.translate(0, slidingTop + st::topBarHeight);
 		paintTopBar(p);
@@ -687,10 +691,22 @@ void TopBarWidget::paintTopBar(Painter &p) {
 			paintStatus(p, statusleft, statustop, statuswidth, width());
 		}
 	} else if (namePeer) {
-		if (_titleNameVersion < namePeer->nameVersion()) {
+		const auto terminal = Window::Theme::IsTerminalTheme();
+		static const auto terminalTitleStyle = [] {
+			auto result = st::msgNameStyle;
+			result.font = style::font(style::ConvertScale(19), result.font->flags(), result.font->family());
+			return result;
+		}();
+		const auto &titleStyle = terminal ? terminalTitleStyle : st::msgNameStyle;
+		if (terminal) {
+			nametop = (st::topBarHeight - titleStyle.font->height - st::dialogsTextFont->height
+				- style::ConvertScale(2)) / 2;
+			statustop = nametop + titleStyle.font->height + style::ConvertScale(2);
+		}
+		if (_titleNameVersion < namePeer->nameVersion() || _title.style() != &titleStyle) {
 			_titleNameVersion = namePeer->nameVersion();
 			_title.setText(
-				st::msgNameStyle,
+				titleStyle,
 				TopBarNameText(namePeer, _activeChat),
 				Ui::NameTextOptions());
 		}
@@ -713,7 +729,7 @@ void TopBarWidget::paintTopBar(Painter &p) {
 				nameleft,
 				nametop,
 				namewidth,
-				st::msgNameStyle.font->height),
+				titleStyle.font->height),
 			.nameWidth = _title.maxWidth(),
 			.outerWidth = width(),
 			.verified = &st::dialogsVerifiedIcon,

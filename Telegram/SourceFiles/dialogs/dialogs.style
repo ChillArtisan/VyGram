@@ -94,19 +94,19 @@ dialogsFilterSkip: 4px;
 
 defaultDialogRow: DialogRow {
 	height: dialogsRowHeight;
-	padding: margins(14px, 11px, 14px, 11px);
-	photoSize: 46px;
-	nameLeft: 74px;
+	padding: margins(16px, 12px, 16px, 12px);
+	photoSize: 44px;
+	nameLeft: 72px;
 	nameTop: 12px;
-	textLeft: 74px;
+	textLeft: 72px;
 	textTop: 36px;
 }
 communityRequestableListItem: PeerListItem(defaultPeerListItem) {
 	height: dialogsRowHeight;            // == st::defaultDialogRow.height (68px)
-	photoSize: 46px;                     // == st::defaultDialogRow.photoSize
-	photoPosition: point(14px, 11px);     // == st::defaultDialogRow.padding left/top (14,11)
-	namePosition: point(74px, 12px);     // == st::defaultDialogRow.nameLeft / nameTop
-	statusPosition: point(74px, 36px);   // == st::defaultDialogRow.textLeft / textTop
+	photoSize: 44px;                     // == st::defaultDialogRow.photoSize
+	photoPosition: point(16px, 12px);     // == st::defaultDialogRow.padding left/top (14,11)
+	namePosition: point(72px, 12px);     // == st::defaultDialogRow.nameLeft / nameTop
+	statusPosition: point(72px, 36px);   // == st::defaultDialogRow.textLeft / textTop
 }
 communityRequestableList: PeerList(defaultPeerList) {
 	item: communityRequestableListItem;

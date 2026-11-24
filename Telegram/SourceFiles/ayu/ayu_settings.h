@@ -335,6 +335,36 @@ public:
 	[[nodiscard]] const QString &monoFont() const { return _monoFont.current(); }
 	[[nodiscard]] bool hideNotificationCounters() const { return _hideNotificationCounters.current(); }
 	[[nodiscard]] bool hideNotificationBadge() const { return _hideNotificationBadge.current(); }
+	[[nodiscard]] bool graphiteNavLabels() const { return _graphiteNavLabels.current(); }
+	[[nodiscard]] rpl::producer<bool> graphiteNavLabelsValue() const { return _graphiteNavLabels.value(); }
+	void setGraphiteNavLabels(bool val);
+	[[nodiscard]] bool graphiteCompactNav() const { return _graphiteCompactNav.current(); }
+	[[nodiscard]] rpl::producer<bool> graphiteCompactNavValue() const { return _graphiteCompactNav.value(); }
+	void setGraphiteCompactNav(bool val);
+	[[nodiscard]] bool graphiteForumMessages() const { return _graphiteForumMessages.current(); }
+	[[nodiscard]] rpl::producer<bool> graphiteForumMessagesValue() const { return _graphiteForumMessages.value(); }
+	void setGraphiteForumMessages(bool val);
+	[[nodiscard]] bool graphiteMessageIds() const { return _graphiteMessageIds.current(); }
+	[[nodiscard]] rpl::producer<bool> graphiteMessageIdsValue() const { return _graphiteMessageIds.value(); }
+	void setGraphiteMessageIds(bool val);
+	[[nodiscard]] int graphiteGrainOpacity() const { return _graphiteGrainOpacity.current(); }
+	[[nodiscard]] rpl::producer<int> graphiteGrainOpacityValue() const { return _graphiteGrainOpacity.value(); }
+	void setGraphiteGrainOpacity(int val);
+	[[nodiscard]] int graphiteAvatarSize() const { return _graphiteAvatarSize.current(); }
+	[[nodiscard]] rpl::producer<int> graphiteAvatarSizeValue() const { return _graphiteAvatarSize.value(); }
+	void setGraphiteAvatarSize(int val);
+	[[nodiscard]] int graphiteListSurface() const { return _graphiteListSurface.current(); }
+	[[nodiscard]] rpl::producer<int> graphiteListSurfaceValue() const { return _graphiteListSurface.value(); }
+	void setGraphiteListSurface(int val);
+	[[nodiscard]] int graphiteNavSurface() const { return _graphiteNavSurface.current(); }
+	[[nodiscard]] rpl::producer<int> graphiteNavSurfaceValue() const { return _graphiteNavSurface.value(); }
+	void setGraphiteNavSurface(int val);
+	[[nodiscard]] int graphiteChatSurface() const { return _graphiteChatSurface.current(); }
+	[[nodiscard]] rpl::producer<int> graphiteChatSurfaceValue() const { return _graphiteChatSurface.value(); }
+	void setGraphiteChatSurface(int val);
+	[[nodiscard]] int graphiteMessageSize() const { return _graphiteMessageSize.current(); }
+	[[nodiscard]] rpl::producer<int> graphiteMessageSizeValue() const { return _graphiteMessageSize.value(); }
+	void setGraphiteMessageSize(int val);
 	[[nodiscard]] bool hideAllChatsFolder() const { return _hideAllChatsFolder.current(); }
 	[[nodiscard]] ChannelBottomButton channelBottomButton() const { return _channelBottomButton.current(); }
 	[[nodiscard]] bool quickAdminShortcuts() const { return _quickAdminShortcuts.current(); }
@@ -693,6 +723,16 @@ private:
 	rpl::variable<QString> _monoFont;
 	rpl::variable<bool> _hideNotificationCounters = false;
 	rpl::variable<bool> _hideNotificationBadge = false;
+	rpl::variable<bool> _graphiteNavLabels = true;
+	rpl::variable<bool> _graphiteCompactNav = false;
+	rpl::variable<bool> _graphiteForumMessages = true;
+	rpl::variable<int> _graphiteMessageSize = 14;
+	rpl::variable<int> _graphiteChatSurface = 1;
+	rpl::variable<int> _graphiteNavSurface = 3;
+	rpl::variable<int> _graphiteListSurface = 1;
+	rpl::variable<int> _graphiteAvatarSize = 40;
+	rpl::variable<int> _graphiteGrainOpacity = 3;
+	rpl::variable<bool> _graphiteMessageIds = true;
 	rpl::variable<bool> _hideAllChatsFolder = false;
 	rpl::variable<ChannelBottomButton> _channelBottomButton = ChannelBottomButton::DiscussWithFallback;
 	rpl::variable<bool> _quickAdminShortcuts = true;

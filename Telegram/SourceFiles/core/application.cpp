@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/application.h"
 
+#include <QFontDatabase>
+
 #include "data/data_abstract_structure.h"
 #include "data/data_channel.h"
 #include "data/data_forum.h"
@@ -60,6 +62,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/crash_reports.h"
 #include "main/main_account.h"
 #include "main/main_domain.h"
+#include "info/downloads/info_downloads_widget.h"
+#include "info/info_memento.h"
 #include "main/main_session.h"
 #include "media/view/media_view_overlay_widget.h"
 #include "media/view/media_view_open_common.h"
@@ -110,6 +114,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_infra.h"
+#include "ayu/ui/boxes/command_palette_box.h"
+#include "data/data_thread.h"
+#include "menu/menu_mute.h"
 #include "ayu/data/ayu_database.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/features/streamer_mode/streamer_mode.h"
@@ -319,7 +326,14 @@ void Application::run() {
 	Window::Theme::PrepareFreshProfile();
 	startLocalStorage();
 
-	style::SetCustomFont(settings().customFontFamily());
+	auto fontFamily = settings().customFontFamily();
+	if (fontFamily.isEmpty()) {
+		const auto id = QFontDatabase::addApplicationFont(u":/gui/fonts/IBMPlexSans.ttf"_q);
+		if (id >= 0) {
+			fontFamily = QFontDatabase::applicationFontFamilies(id).value(0);
+		}
+	}
+	style::SetCustomFont(fontFamily);
 	style::internal::StartFonts();
 
 	Test::ApplyStartupOverrides();
@@ -742,7 +756,8 @@ bool Application::eventFilter(QObject *object, QEvent *e) {
 		if (base::Platform::GlobalShortcuts::IsToggleFullScreenKey(event)
 			&& toggleActiveWindowFullScreen()) {
 			return true;
-		} else if (Shortcuts::HandlePossibleChatSwitch(event)) {
+		} else if (Shortcuts::HandleLayoutShortcut(event)
+			|| Shortcuts::HandlePossibleChatSwitch(event)) {
 			return true;
 		}
 	} break;
@@ -2030,6 +2045,32 @@ void Application::startShortcuts() {
 	Shortcuts::Requests(
 	) | rpl::on_next([=](not_null<Shortcuts::Request*> request) {
 		using Command = Shortcuts::Command;
+		for (const auto command : { Command::Palette, Command::OpenDownloads, Command::OpenSettings, Command::ToggleChatMute }) {
+			request->check(command) && request->handle([=] {
+				const auto window = activeWindow();
+				const auto session = window ? window->sessionController() : nullptr;
+				if (!session || passcodeLocked() || window->locked() || session->isLayerShown()) {
+					return false;
+				}
+				if (command == Command::Palette) {
+					Ayu::ShowCommandPalette(session);
+				} else if (command == Command::OpenDownloads) {
+					session->showSection(Info::Downloads::Make(session->session().user()));
+				} else {
+					if (command == Command::ToggleChatMute) {
+						const auto thread = session->activeChatCurrent().thread();
+						if (!thread || thread->peer()->isSelf() || thread->asSublist()
+							|| (thread->asHistory() && thread->asHistory()->isForum())) {
+							return false;
+						}
+						MuteMenu::ToggleMuteForever(thread);
+					} else {
+						session->showSettings();
+					}
+				}
+				return true;
+			});
+		}
 		request->check(Command::Quit) && request->handle([] {
 			Quit();
 			return true;

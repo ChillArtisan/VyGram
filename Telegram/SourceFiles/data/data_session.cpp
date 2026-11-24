@@ -3125,6 +3125,7 @@ proceed:
 		existing->applyEdition(data);
 	}, [&](const auto &data) {
 		existing->applyEdition(HistoryMessageEdition(_session, data));
+		AyuMessages::archiveChatMessage(existing);
 	});
 }
 

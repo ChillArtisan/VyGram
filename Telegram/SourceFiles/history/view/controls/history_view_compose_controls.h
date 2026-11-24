@@ -659,6 +659,7 @@ private:
 	mtpRequestId _inlineBotResolveRequestId = 0;
 	bool _isInlineBot = false;
 	bool _botCommandShown = false;
+	bool _composePaletteShortcut = false;
 	bool _likeShown = false;
 	Webrtc::RecordAvailability _recordAvailability = {};
 

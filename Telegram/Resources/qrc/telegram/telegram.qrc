@@ -16,7 +16,15 @@
     <file alias="day-blue.tdesktop-theme">../../day-blue.tdesktop-theme</file>
     <file alias="night.tdesktop-theme">../../night.tdesktop-theme</file>
     <file alias="night-green.tdesktop-theme">../../night-green.tdesktop-theme</file>
+    <file alias="graphite/grain.png">../../art/graphite/grain.png</file>
+    <file alias="graphite/topographic.png">../../art/graphite/topographic.png</file>
+    <file alias="graphite/title.jpg">../../art/graphite/title.jpg</file>
+    <file alias="graphite/navigation.jpg">../../art/graphite/navigation.jpg</file>
+    <file alias="graphite/mark.png">../../art/graphite/mark.png</file>
+    <file alias="cold-steel.tdesktop-theme">../../cold-steel.tdesktop-theme</file>
     <file alias="terminal.tdesktop-theme">../../terminal.tdesktop-theme</file>
+    <file alias="fonts/IBMPlexSans.ttf">../../fonts/IBMPlexSans.ttf</file>
+    <file alias="fonts/IBMPlexSans-OFL.txt">../../fonts/IBMPlexSans-OFL.txt</file>
     <file alias="fonts/JetBrainsMono-Regular.ttf">../../fonts/JetBrainsMono-Regular.ttf</file>
     <file alias="fonts/JetBrainsMono-OFL.txt">../../fonts/JetBrainsMono-OFL.txt</file>
     <file alias="licenses/SQLCipher-LICENSE.md">../../../SourceFiles/ayu/libs/sqlite/SQLCipher-LICENSE.md</file>

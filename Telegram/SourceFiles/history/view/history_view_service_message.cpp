@@ -30,6 +30,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_forum_topic.h"
 #include "lang/lang_keys.h"
 #include "styles/style_chat.h"
+#include "window/themes/window_theme.h"
 #include "styles/style_info.h"
 
 // AyuGram includes
@@ -162,6 +163,25 @@ void PaintPreparedDate(
 		int y,
 		int w,
 		bool chatWide) {
+	if (Window::Theme::IsTerminalTheme()) {
+		w = chatWide ? std::min(w, WideChatWidth()) : w;
+		const auto font = st::msgDateFont;
+		const auto text = font->elided(dateText.toUpper(), std::max(0, w - style::ConvertScale(32)));
+		const auto mid = w / 2;
+		const auto half = font->width(text) / 2;
+		const auto top = y + st::msgServiceMargin.top() + st::msgServicePadding.top();
+		const auto lineY = top + st::msgServiceFont->height / 2;
+		const auto edge = std::max(style::ConvertScale(24), mid - style::ConvertScale(420));
+		const auto lineWidth = mid - half - style::ConvertScale(16) - edge;
+		if (lineWidth > 0) {
+			p.fillRect(edge, lineY, lineWidth, st::lineWidth, st::menuSeparatorFg);
+			p.fillRect(w - edge - lineWidth, lineY, lineWidth, st::lineWidth, st::menuSeparatorFg);
+		}
+		p.setPen(st::windowSubTextFg);
+		p.setFont(font);
+		p.drawText(QRect(0, top, w, st::msgServiceFont->height), Qt::AlignCenter, text);
+		return;
+	}
 	int left = st::msgServiceMargin.left();
 	const auto maxwidth = chatWide
 		? std::min(w, WideChatWidth())

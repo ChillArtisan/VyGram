@@ -97,6 +97,8 @@ void KeepFromEditor(
 	const QImage &background);
 QString NightThemePath();
 [[nodiscard]] QString TerminalThemePath();
+[[nodiscard]] QString ColdSteelThemePath();
+[[nodiscard]] bool IsColdSteelTheme();
 [[nodiscard]] bool IsTerminalTheme();
 [[nodiscard]] bool IsNightMode();
 void SetNightModeValue(bool nightMode);

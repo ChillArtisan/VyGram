@@ -96,6 +96,94 @@ notifySendReply: IconButton {
 }
 notifyFadeRight: icon {{ "fade_horizontal", notificationBg }};
 
+graphiteCaptionSize: size(44px, 36px);
+graphiteCaptionButton: IconButton {
+	width: 44px;
+	height: 36px;
+	iconPosition: point(0px, 0px);
+}
+graphiteWindowTitle: WindowTitle {
+	height: 36px;
+	bg: titleBg;
+	bgActive: titleBgActive;
+	fg: titleFg;
+	fgActive: titleFgActive;
+	style: TextStyle(defaultTextStyle) {
+		font: font(semibold 12px);
+	}
+	shadow: true;
+	oneSideControls: false;
+	minimize: IconButton(graphiteCaptionButton) {
+		icon: icon {
+			{ graphiteCaptionSize, titleButtonBg },
+			{ "title_button_minimize", titleButtonFg, point(4px, 6px) },
+		};
+		iconOver: icon {
+			{ graphiteCaptionSize, titleButtonBgOver },
+			{ "title_button_minimize", titleButtonFgOver, point(4px, 6px) },
+		};
+	}
+	minimizeIconActive: icon {
+		{ graphiteCaptionSize, titleButtonBgActive },
+		{ "title_button_minimize", titleButtonFgActive, point(4px, 6px) },
+	};
+	minimizeIconActiveOver: icon {
+		{ graphiteCaptionSize, titleButtonBgActiveOver },
+		{ "title_button_minimize", titleButtonFgActiveOver, point(4px, 6px) },
+	};
+	maximize: IconButton(graphiteCaptionButton) {
+		icon: icon {
+			{ graphiteCaptionSize, titleButtonBg },
+			{ "title_button_maximize", titleButtonFg, point(4px, 6px) },
+		};
+		iconOver: icon {
+			{ graphiteCaptionSize, titleButtonBgOver },
+			{ "title_button_maximize", titleButtonFgOver, point(4px, 6px) },
+		};
+	}
+	maximizeIconActive: icon {
+		{ graphiteCaptionSize, titleButtonBgActive },
+		{ "title_button_maximize", titleButtonFgActive, point(4px, 6px) },
+	};
+	maximizeIconActiveOver: icon {
+		{ graphiteCaptionSize, titleButtonBgActiveOver },
+		{ "title_button_maximize", titleButtonFgActiveOver, point(4px, 6px) },
+	};
+	restoreIcon: icon {
+		{ graphiteCaptionSize, titleButtonBg },
+		{ "title_button_restore", titleButtonFg, point(4px, 6px) },
+	};
+	restoreIconOver: icon {
+		{ graphiteCaptionSize, titleButtonBgOver },
+		{ "title_button_restore", titleButtonFgOver, point(4px, 6px) },
+	};
+	restoreIconActive: icon {
+		{ graphiteCaptionSize, titleButtonBgActive },
+		{ "title_button_restore", titleButtonFgActive, point(4px, 6px) },
+	};
+	restoreIconActiveOver: icon {
+		{ graphiteCaptionSize, titleButtonBgActiveOver },
+		{ "title_button_restore", titleButtonFgActiveOver, point(4px, 6px) },
+	};
+	close: IconButton(graphiteCaptionButton) {
+		icon: icon {
+			{ graphiteCaptionSize, titleButtonCloseBg },
+			{ "title_button_close", titleButtonCloseFg, point(4px, 6px) },
+		};
+		iconOver: icon {
+			{ graphiteCaptionSize, titleButtonCloseBgOver },
+			{ "title_button_close", titleButtonCloseFgOver, point(4px, 6px) },
+		};
+	}
+	closeIconActive: icon {
+		{ graphiteCaptionSize, titleButtonCloseBgActive },
+		{ "title_button_close", titleButtonCloseFgActive, point(4px, 6px) },
+	};
+	closeIconActiveOver: icon {
+		{ graphiteCaptionSize, titleButtonCloseBgActiveOver },
+		{ "title_button_close", titleButtonCloseFgActiveOver, point(4px, 6px) },
+	};
+}
 titleUnreadCounterTop: 6px;
 
 titleSubWidgetLeft: icon {{ "fade_horizontal", titleBgActive }};

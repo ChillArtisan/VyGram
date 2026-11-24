@@ -16,6 +16,7 @@ passcodeTitle: FlatLabel(defaultFlatLabel) {
 	}
 }
 passcodeAbout: FlatLabel(defaultFlatLabel) {
+	minWidth: 120px;
 	align: align(center);
 	textFg: windowSubTextFg;
 	style: TextStyle(defaultTextStyle) {

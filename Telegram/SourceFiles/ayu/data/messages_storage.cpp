@@ -41,7 +41,10 @@ auto mediaDownloadEvents(not_null<Main::Session*> session) {
 	) | rpl::take_while([](bool alive) { return alive; });
 }
 
-void archiveMedia(not_null<HistoryItem*> item, AyuMessageBase &message) {
+void archiveMedia(
+		not_null<HistoryItem*> item,
+		AyuMessageBase &message,
+		bool chatSnapshot) {
 	message.mediaPath.clear();
 	message.documentType = 0;
 	message.documentSerialized = AyuMapper::serializeMedia(item);
@@ -51,6 +54,12 @@ void archiveMedia(not_null<HistoryItem*> item, AyuMessageBase &message) {
 	const auto session = &item->history()->session();
 	const auto weak = base::make_weak(session);
 	const auto userId = message.userId;
+	const auto dialogId = message.dialogId;
+	const auto store = [=](ID mediaId, int mediaType, const QByteArray &bytes) {
+		return chatSnapshot
+			? AyuDatabase::storeArchivedChatMedia(userId, dialogId, mediaId, mediaType, bytes)
+			: AyuDatabase::storeMedia(userId, mediaId, mediaType, bytes);
+	};
 	const auto origin = Data::FileOrigin(item->fullId());
 	if (const auto photo = item->media()->photo()) {
 		message.documentType = kPhotoMedia;
@@ -62,14 +71,14 @@ void archiveMedia(not_null<HistoryItem*> item, AyuMessageBase &message) {
 			}
 			const auto bytes = view->imageBytes(Data::PhotoSize::Large);
 			if (!bytes.isEmpty()) {
-				if (!AyuDatabase::storeMedia(userId, id, kPhotoMedia, bytes)) {
+				if (!store(id, kPhotoMedia, bytes)) {
 					LOG(("AyuMessages: Failed to commit archived photo"));
 				}
 			}
 		};
 		if (!view->imageBytes(Data::PhotoSize::Large).isEmpty()) {
 			save();
-		} else {
+		} else if (!chatSnapshot) {
 			// The view, not a HistoryItem pointer, survives asynchronous loading.
 			mediaDownloadEvents(session)
 				| rpl::filter([=] { return !weak || !view->imageBytes(Data::PhotoSize::Large).isEmpty()
@@ -102,14 +111,15 @@ void archiveMedia(not_null<HistoryItem*> item, AyuMessageBase &message) {
 			}
 			const auto bytes = view->bytes();
 			if (!bytes.isEmpty() && bytes.size() == document->size) {
-				if (!AyuDatabase::storeMedia(userId, id, kDocumentMedia, bytes)) {
+				if (!store(id, kDocumentMedia, bytes)) {
 					LOG(("AyuMessages: Failed to commit archived document"));
 				}
 			}
 		};
 		if (!view->bytes().isEmpty()) {
 			save();
-		} else if (document->size > 0 && document->size < Storage::kMaxFileInMemory) {
+		} else if (!chatSnapshot && document->size > 0
+				&& document->size < Storage::kMaxFileInMemory) {
 			// WHY: Upstream's memory-only loader has a 10 MiB limit. Never let it
 			// fall back to creating an unencrypted file for larger documents.
 			document->forceToCache(true);
@@ -127,18 +137,26 @@ void archiveMedia(not_null<HistoryItem*> item, AyuMessageBase &message) {
 MTPMessageMedia restoreMedia(
 		const AyuMessageBase &message,
 		not_null<Main::Session*> session,
-		std::shared_ptr<void> &mediaView) {
-	const ID userId = session->userId().bare & PeerId::kChatTypeMask;
+		std::shared_ptr<void> &mediaView,
+		bool chatSnapshot) {
+	const ID userId = chatSnapshot
+		? session->uniqueId()
+		: (session->userId().bare & PeerId::kChatTypeMask);
 	if (message.userId != userId) {
 		return MTP_messageMediaEmpty();
 	}
+	const auto load = [&](ID mediaId, int mediaType) {
+		return chatSnapshot
+			? AyuDatabase::loadArchivedChatMedia(userId, message.dialogId, mediaId, mediaType)
+			: AyuDatabase::loadMedia(userId, mediaId, mediaType);
+	};
 	const auto media = AyuMapper::deserializeMedia(message.documentSerialized);
 	if (media.type() == mtpc_messageMediaPhoto) {
 		const auto photo = media.c_messageMediaPhoto().vphoto();
 		if (!photo || photo->type() != mtpc_photo) {
 			return MTP_messageMediaEmpty();
 		}
-		const auto bytes = AyuDatabase::loadMedia(userId, ID(photo->c_photo().vid().v), kPhotoMedia);
+		const auto bytes = load(ID(photo->c_photo().vid().v), kPhotoMedia);
 		auto image = QImage::fromData(bytes);
 		if (bytes.isEmpty() || image.isNull()) {
 			return MTP_messageMediaEmpty();
@@ -153,7 +171,7 @@ MTPMessageMedia restoreMedia(
 		if (!document || document->type() != mtpc_document) {
 			return MTP_messageMediaEmpty();
 		}
-		const auto bytes = AyuDatabase::loadMedia(userId, ID(document->c_document().vid().v), kDocumentMedia);
+		const auto bytes = load(ID(document->c_document().vid().v), kDocumentMedia);
 		if (bytes.isEmpty() || bytes.size() != document->c_document().vsize().v) {
 			return MTP_messageMediaEmpty();
 		}
@@ -176,11 +194,16 @@ std::vector<AyuMessageBase> convertToBase(const std::vector<DerivedMessage> &mes
 	return based;
 }
 
-void map(not_null<HistoryItem*> item, AyuMessageBase &message) {
-	const ID userId = item->history()->owner().session().userId().bare & PeerId::kChatTypeMask;
-
-	message.userId = userId;
-	message.dialogId = getDialogIdFromPeer(item->history()->peer);
+void map(
+		not_null<HistoryItem*> item,
+		AyuMessageBase &message,
+		bool chatSnapshot = false) {
+	const auto &session = item->history()->session();
+	const auto peer = item->history()->peer;
+	message.userId = chatSnapshot
+		? session.uniqueId()
+		: (session.userId().bare & PeerId::kChatTypeMask);
+	message.dialogId = chatSnapshot ? ID(peer->id.value) : getDialogIdFromPeer(peer);
 	message.groupedId = item->groupId().raw();
 	message.peerId = item->history()->peer->id.value & PeerId::kChatTypeMask;
 	message.fromId = item->from()->id.value & PeerId::kChatTypeMask;
@@ -221,7 +244,7 @@ void map(not_null<HistoryItem*> item, AyuMessageBase &message) {
 	message.text = serializedText.first;
 	message.textEntities = serializedText.second;
 
-	archiveMedia(item, message);
+	archiveMedia(item, message, chatSnapshot);
 }
 
 void addEditedMessage(not_null<HistoryItem *> item) {
@@ -249,6 +272,34 @@ bool hasRevisions(not_null<HistoryItem*> item) {
 	const auto msgId = item->id.bare;
 
 	return AyuDatabase::hasRevisions(userId, dialogId, msgId);
+}
+
+bool isChatArchiveEnabled(not_null<PeerData*> peer) {
+	const ID userId = peer->session().uniqueId();
+	return AyuDatabase::isArchivedChatEnabled(userId, ID(peer->id.value));
+}
+
+bool setChatArchiveEnabled(not_null<PeerData*> peer, bool enabled) {
+	const ID userId = peer->session().uniqueId();
+	return AyuDatabase::setArchivedChatEnabled(
+		userId, ID(peer->id.value), peer->name().toStdString(), enabled);
+}
+
+void archiveChatMessage(not_null<HistoryItem*> item) {
+	if (!IsServerMsgId(item->id) || !item->isRegular() || item->isService()
+		|| !isChatArchiveEnabled(item->history()->peer)) {
+		return;
+	}
+	AyuMessageBase message{};
+	map(item, message, true);
+	if (!item->Get<HistoryMessageEdited>()) {
+		message.editDate = 0;
+	}
+	if ((message.text.empty() && message.documentSerialized.empty())
+		|| AyuDatabase::archiveChatMessage(message)) {
+		return;
+	}
+	LOG(("AyuMessages: Failed to commit chat archive message"));
 }
 
 void addDeletedMessage(not_null<HistoryItem*> item) {
