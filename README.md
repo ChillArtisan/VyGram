@@ -1,176 +1,140 @@
 # VyGram
 
-Personal Telegram Desktop client based on [AyuGram Desktop](https://github.com/AyuGram/AyuGramDesktop).
+Личный десктопный клиент Telegram для Windows. Форк [AyuGram Desktop](https://github.com/AyuGram/AyuGramDesktop),
+который, в свою очередь, основан на [Telegram Desktop](https://github.com/telegramdesktop/tdesktop).
 
-This fork adds the Terminal appearance, local password visibility controls,
-password-protected profile startup, and encrypted persistent message/media storage.
+[ Русский | [English](README-EN.md) ]
 
-- [Terminal design and appearance](docs/terminal-design.md)
-- [Protected storage, limitations and validation](docs/protected-storage.md)
+![Экран защиты локального архива](.github/vygram/lock-screen.png)
 
-This is a development build. Protection covers data at rest within the supported
-profile/storage paths; locking the window does not unload keys from memory.
-An independent security audit has not been performed.
+> **Статус: альфа.** Функции собраны и проверены отдельными тестами, сквозные проверки
+> в авторизованном клиенте ещё не завершены. Не используйте эту сборку как единственную
+> копию важного профиля.
 
-Clone with submodules (`git clone --recursive`). Upstream licenses, attribution
-and source history are retained. Build instructions and the original AyuGram
-project information follow below.
+## Чем отличается от AyuGram
 
----
+Всё, что умеет AyuGram (режим призрака, история удалённых и изменённых сообщений,
+антиотзыв, переводчик и прочее), сохранено. Сверху добавлено:
 
-# AyuGram
+### Приватность и хранение
 
-![AyuGram Logo](.github/AyuGram.png) ![AyuChan](.github/AyuChan.png)
+- **Защищённый локальный архив.** Удалённые и изменённые сообщения, медиа и настройки
+  хранятся в базе SQLCipher, зашифрованной мастер-ключом профиля.
+- **Обязательный локальный пароль.** Мастер-ключ обёрнут scrypt (N=65536, r=8, p=1);
+  минимум 12 символов, простые шаблоны отклоняются. Восстановить забытый пароль нельзя.
+- **Сохранение выбранных чатов.** Включается вручную для отдельного диалога. Загруженные
+  сообщения и доступные вложения остаются в архиве, даже если собеседник удалил чат
+  для обеих сторон.
+- **Центр архива.** Сохранённые диалоги, в том числе пропавшие из списка Telegram:
+  поиск по тексту, фильтры по дате и типу, сохранение вложений, очистка копии.
+- **Экран состояния защиты.** Фактическое состояние архива, блокировка окна и полное
+  закрытие профиля.
+- **Приватность для отдельного чата.** Индикаторы набора, записи и загрузки можно
+  переопределить для конкретного диалога со сбросом к глобальным настройкам.
+- Обычные файловые логи и встроенные краш-дампы отключены.
 
-[ English  |   [Русский](README-RU.md) ]
+### Работа с сообщениями
 
-## Features
+- **Заготовки отправки.** Библиотека кружков, голосовых, видео и фото для каждого аккаунта
+  отдельно: предпросмотр, задержка с индикатором записи, отправка через штатный конвейер.
+- **Локальные метки.** Пометки диалогов, которые хранятся только на устройстве,
+  и быстрый фильтр по ним. Серверные папки не меняются.
 
-- Full ghost mode (flexible)
-- Messages history
-- Anti-recall
-- Font customization
-- Streamer mode
-- Local Telegram Premium
-- Translator
-- Media preview & quick reaction on force click (macOS)
-- Enhanced appearance
+### Интерфейс Graphite
 
-And many more. Check out our [Documentation](https://docs.ayugram.one/desktop/).
+- Тёплая графитовая палитра с янтарным акцентом, зерно, IBM Plex Sans и JetBrains Mono.
+- Шапка окна с версией, каналом сборки и состоянием подключения.
+- Боковая навигация (широкая 168 px или компактная 64 px) со всеми чатами, контактами,
+  группами, каналами, архивом, избранным, активностью, загрузками и папками.
+- Список чатов с секциями «Закреплённые» и «Все чаты».
+- Лента сообщений в стиле форума: группировка по автору, разделители дат,
+  номера сообщений при достаточной ширине.
+- Темы «Графит» и «Холодная сталь», настройка фона, зерна, размера текста и аватаров,
+  импорт и экспорт параметров в JSON.
+- Интерфейс VyGram полностью переведён на русский; язык выбирается по языку клиента.
 
-<h3>
-  <details>
-    <summary>Preview</summary>
-    <table>
-      <tr>
-        <td><img src='.github/demos/demo1.png' width='268' alt='Preferences'></td>
-        <td><img src='.github/demos/demo2.png' width='268' alt='AyuGram Options'></td>
-        <td><img src='.github/demos/demo3.png' width='268' alt='Message Filters'></td>
-      </tr>
-      <tr>
-        <td><img src='.github/demos/demo4.png' width='268' alt='Appearance'></td>
-        <td><img src='.github/demos/demo5.png' width='268' alt='Chats'></td>
-      </tr>
-    </table>
-  </details>
-</h3>
+### Палитра команд и горячие клавиши
 
-## Downloads
+| Сочетание | Действие |
+| --- | --- |
+| `Ctrl+K` | Палитра команд: поиск чатов и действий клиента (при выделенном тексте — ссылка) |
+| `Ctrl+,` | Настройки |
+| `Ctrl+N` | Контакты |
+| `Ctrl+G` | Избранное |
+| `Ctrl+J` | Загрузки |
+| `Ctrl+Shift+M` | Включить или выключить уведомления текущего чата |
+| `Alt+1…9` | Переход к папке чатов по номеру |
 
-### Windows
+Сочетания работают и на русской раскладке.
 
-#### Official
+## Ограничения защиты
 
-You can download prebuilt Windows binary from [Releases tab](https://github.com/AyuGram/AyuGramDesktop/releases) or from
-the [Telegram channel](https://t.me/AyuGramReleases).
+Защита касается данных на диске закрытого профиля. Блокировка окна скрывает интерфейс,
+но не выгружает ключи и сессию из памяти. Чтобы убрать живую сессию из процесса,
+клиент нужно закрыть. От администратора, вредоносного ПО, захвата экрана и уже
+разблокированного процесса клиент не защищает. Сквозного шифрования облачных чатов
+VyGram не добавляет. Независимый аудит безопасности не проводился.
 
-#### Winget
+Подробности — в [docs/protected-storage.md](docs/protected-storage.md).
 
-```bash
-winget install RadolynLabs.AyuGramDesktop
+## Сборка
+
+Поддерживается Windows x64, только конфигурация Debug. Окружение готовится по
+[docs/building-win.md](docs/building-win.md). Репозиторий клонируется с подмодулями:
+
+```powershell
+git clone --recursive https://github.com/ChillArtisan/VyGram.git
 ```
 
-#### Scoop
+Сборка из x64 Native Tools Command Prompt (`vcvars64.bat -vcvars_ver=14.44`) в корне репозитория:
 
-```bash
-scoop bucket add extras
-scoop install ayugram
+```powershell
+cmake --build out --config Debug --target Telegram --parallel 4
 ```
 
-#### Self-built
+Результат — `out\Debug\VyGram.exe`.
 
-Follow [official guide](https://github.com/AyuGram/AyuGramDesktop/blob/dev/docs/building-win-x64.md) if you want to
-build by yourself.
+Для быстрых повторных сборок есть опция инкрементальной линковки MSVC, только для Debug.
+С ней пересборка после правки одного `.cpp` занимает около 40 секунд вместо нескольких минут:
 
-### macOS
-
-#### Official
-
-You can download prebuilt macOS package from [Releases tab](https://github.com/AyuGram/AyuGramDesktop/releases).
-
-#### Homebrew
-
-```bash
-brew install --cask ayugram
+```powershell
+cmake -S . -B out -DVYGRAM_LOCAL_INCREMENTAL_LINK=ON
 ```
 
-### Arch Linux
+Нужны собственные `api_id` и `api_hash` с [my.telegram.org](https://my.telegram.org),
+их передают при конфигурации через `-DTDESKTOP_API_ID` и `-DTDESKTOP_API_HASH`.
 
-#### From source (recommended)
+### Тесты
 
-Install `ayugram-desktop` from [AUR](https://aur.archlinux.org/packages/ayugram-desktop).
-
-#### Prebuilt binaries
-
-Install `ayugram-desktop-bin` from [AUR](https://aur.archlinux.org/packages/ayugram-desktop-bin).
-
-Note: these binaries aren't officially maintained by us.
-
-### NixOS
-
-#### Flake (recommended)
-
-Install `ayugram-desktop` from [ndfined-crp/ayugram-desktop](https://github.com/ndfined-crp/ayugram-desktop)
-
-#### Nixpkgs
-
-Install `ayugram-desktop` from [nixpkgs](https://search.nixos.org/packages?channel=unstable&show=ayugram-desktop)
-
-### ALT Linux
-
-[Sisyphus](https://packages.altlinux.org/en/sisyphus/srpms/ayugram-desktop/)
-
-### Gentoo Linux
-
-See [this repository](https://codeberg.org/OverLessArtem/ayugram-ebuild-gentoo) for installation manual.
-
-### Void Linux
-See [this repository](https://codeberg.org/OverLessArtem/ayugram-template-void) for installation manual.
-
-### EPM
-
-`epm play ayugram`
-
-### Fedora
-
-From [RPM Fusion](https://admin.rpmfusion.org/pkgdb/package/free/ayugram-desktop/) repository.
-
-```bash
-dnf install ayugram-desktop
+```powershell
+py -3 -m unittest discover -s tools/tests -p "test_terminal_*.py" -v
 ```
 
-### Any other Linux distro
+C++-тесты хранилища, политики паролей, приватности и разбора MP4 лежат в `tools/tests/`
+и собираются отдельно от клиента.
 
-Flatpak: https://github.com/0FL01/AyuGramDesktop-flatpak
+## Документация
 
-Or follow the [official guide](https://github.com/AyuGram/AyuGramDesktop/blob/dev/docs/building-linux.md).
+- [Оформление Terminal и Graphite](docs/terminal-design.md)
+- [Защищённое хранение](docs/protected-storage.md)
+- [Заготовки отправки](docs/send-templates.md)
 
-## Donation
+## Планы
 
-Enjoy using **AyuGram**? Consider sending us a tip!
+- Сквозные проверки на тестовых серверах Telegram.
+- Сборка в CI.
+- Полнотекстовый поиск по всему архиву, экспорт сохранённого чата в HTML/JSON,
+  история правок в виде диффа, зашифрованный бэкап архива.
+- Расширение палитры команд, локальные заметки к контактам, настройки во всё окно.
 
-[Here's available methods.](https://docs.ayugram.one/donate/)
+## Благодарности и лицензия
 
-## Credits
+VyGram основан на [AyuGram Desktop](https://github.com/AyuGram/AyuGramDesktop) и
+[Telegram Desktop](https://github.com/telegramdesktop/tdesktop). История и атрибуция
+исходных проектов сохранены. Распространяется под [GPL v3](LICENSE) с исключением
+для OpenSSL, как и исходный проект.
 
-### Telegram clients
+Шрифты IBM Plex Sans и JetBrains Mono распространяются по лицензии SIL Open Font License.
+Её текст лежит в `Telegram/Resources/fonts`.
 
-- [Telegram Desktop](https://github.com/telegramdesktop/tdesktop)
-- [Kotatogram](https://github.com/kotatogram/kotatogram-desktop)
-- [64Gram](https://github.com/TDesktop-x64/tdesktop)
-- [Forkgram](https://github.com/forkgram/tdesktop)
-
-### Libraries used
-
-- [JSON for Modern C++](https://github.com/nlohmann/json)
-- [SQLite](https://github.com/sqlite/sqlite)
-- [sqlite_orm](https://github.com/fnc12/sqlite_orm)
-- [androidx sources](https://github.com/androidx/androidx)
-
-### Icons
-
-- [Solar Icon Set](https://www.figma.com/community/file/1166831539721848736)
-
-### Bots
-
-- [TelegramDB](https://t.me/tgdatabase) for username lookup by ID (until closing free inline mode at 2 April 2026)
+VyGram — неофициальный клиент, не связанный с Telegram и командой AyuGram.
