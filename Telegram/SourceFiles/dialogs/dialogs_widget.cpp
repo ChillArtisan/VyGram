@@ -712,6 +712,27 @@ Widget::Widget(
 				box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
 			}));
 	});
+	_searchControls->paintRequest() | rpl::on_next([=] {
+		if (_newChat->isHidden()) {
+			return;
+		}
+		auto p = QPainter(_searchControls);
+		auto hq = PainterHighQualityEnabler(p);
+		p.setBrush(Qt::NoBrush);
+		p.setPen(QPen(st::shadowFg->c, st::lineWidth));
+		const auto half = st::lineWidth / 2.;
+		const auto radius = style::ConvertScale(4.);
+		const auto field = QRectF(_search->geometry()).marginsAdded(
+			{ half, half, half, half });
+		p.drawRoundedRect(field, radius, radius);
+		const auto side = style::ConvertScale(28);
+		const auto plus = QRectF(
+			_newChat->x() + (_newChat->width() - side) / 2. + half,
+			_newChat->y() + (_newChat->height() - side) / 2. + half,
+			side - 2 * half,
+			side - 2 * half);
+		p.drawRoundedRect(plus, radius, radius);
+	}, lifetime());
 	_searchGlass->setAttribute(Qt::WA_TransparentForMouseEvents);
 	_searchGlass->paintRequest() | rpl::on_next([=] {
 		auto p = QPainter(_searchGlass);
@@ -2101,6 +2122,12 @@ void Widget::updateLockUnlockPosition() {
 	const auto stories = (_stories && !_stories->isHidden())
 		? _stories->collapsedGeometryCurrent()
 		: Stories::List::CollapsedGeometry();
+	if (!_newChat->isHidden()) {
+		_lockUnlock->move(
+			_newChat->x() - _lockUnlock->width(),
+			_newChat->y() + (_newChat->height() - _lockUnlock->height()) / 2);
+		return;
+	}
 	const auto simple = _search->x() + _search->width();
 	const auto right = stories.geometry.isEmpty()
 		? simple
@@ -4743,6 +4770,7 @@ void Widget::updateControlsGeometry() {
 		filterTop, shortcutWidth, _search->height());
 	_searchGlass->raise();
 	_paletteShortcut->raise();
+	_searchControls->update();
 
 	auto mainMenuLeft = anim::interpolate(
 		st::dialogsFilterPadding.x(),

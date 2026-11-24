@@ -61,6 +61,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // AyuGram includes
 #include "ayu/ayu_settings.h"
 #include "ayu/utils/telegram_helpers.h"
+#include "window/themes/window_theme.h"
 
 
 namespace {
@@ -836,7 +837,21 @@ QDateTime ItemDateTime(not_null<const HistoryItem*> item) {
 }
 
 QString ItemDateText(not_null<const HistoryItem*> item, bool isUntilOnline) {
-	const auto dateText = langDayOfMonthFull(ItemDateTime(item).date());
+	const auto date = ItemDateTime(item).date();
+	if (!item->isScheduled() && Window::Theme::IsTerminalTheme()) {
+		return tr::lng_month_day_year(
+			tr::now,
+			lt_month,
+			Lang::MonthDay(date.month())(tr::now),
+			lt_day,
+			QString::number(date.day()),
+			lt_year,
+			QString::number(date.year()))
+			+ u"  [ "_q
+			+ langDayOfWeek(date)
+			+ u" ]"_q;
+	}
+	const auto dateText = langDayOfMonthFull(date);
 	return !item->isScheduled()
 		? dateText
 		: isUntilOnline

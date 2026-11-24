@@ -1176,7 +1176,9 @@ void TopBarWidget::updateInfoButtonVisibility() {
 	}
 	const auto shown = (communityChatsListBar() && !rootChatsListBar())
 		? communityUserpicShown()
-		: (_controller->adaptive().isOneColumn() || !_primaryWindow);
+		: (_controller->adaptive().isOneColumn()
+			|| !_primaryWindow
+			|| Window::Theme::IsTerminalTheme());
 	_info->setVisible(!_chooseForReportReason && shown);
 }
 

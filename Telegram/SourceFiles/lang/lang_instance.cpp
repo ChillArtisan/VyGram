@@ -552,6 +552,9 @@ void Instance::fillFromSerialized(
 	updateChoosingStickerReplacement();
 
 	_idChanges.fire_copy(_id);
+	if (!_derived) {
+		_updated.fire({}); // the pack can arrive after unlock, when widgets already exist
+	}
 }
 
 void Instance::loadFromContent(const QByteArray &content) {

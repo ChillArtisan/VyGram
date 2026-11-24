@@ -1400,7 +1400,7 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 		}
 		if (hasSections) {
 			p.restore();
-			const auto drawHeader = [&](int raw, QString title, int count) {
+			const auto drawHeader = [&](int raw, QString title, int count, bool pinned) {
 				if (raw < 0) {
 					return;
 				}
@@ -1412,16 +1412,39 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 				p.fillRect(bar, currentBg());
 				p.fillRect(0, bar.bottom(), fullWidth, st::lineWidth, st::shadowFg);
 				const auto margin = st::searchedBarPosition.x();
+				auto inner = bar.adjusted(margin, 0, -margin, 0);
+				if (pinned) {
+					const auto &icon = st::menuIconPin;
+					icon.paint(
+						p,
+						inner.x() - (icon.width() - style::ConvertScale(16)) / 2,
+						bar.y() + (bar.height() - icon.height()) / 2,
+						fullWidth,
+						st::windowActiveTextFg->c);
+					inner.setLeft(inner.left() + style::ConvertScale(24));
+				}
+				auto font = pinned
+					? st::semiboldFont
+					: style::font(
+						style::ConvertScale(11),
+						st::semiboldFont->flags(),
+						st::semiboldFont->family());
+				if (!pinned) {
+					auto letters = font->f;
+					letters.setLetterSpacing(QFont::AbsoluteSpacing, style::ConvertScale(1.));
+					p.setFont(letters);
+					title = title.toUpper();
+				} else {
+					p.setFont(font);
+				}
+				p.setPen(pinned ? st::windowFg : st::windowSubTextFg);
+				p.drawText(inner, Qt::AlignVCenter | Qt::AlignLeading, title);
 				p.setPen(st::windowSubTextFg);
-				p.setFont(st::semiboldFont);
-				p.drawText(bar.adjusted(margin, 0, -margin, 0),
-					Qt::AlignVCenter | Qt::AlignLeading, title);
-				p.setFont(st::normalFont);
-				p.drawText(bar.adjusted(margin, 0, -margin, 0),
-					Qt::AlignVCenter | Qt::AlignTrailing, QString::number(count));
+				p.setFont(style::font(style::ConvertScale(12), 0, u"JetBrains Mono"_q));
+				p.drawText(inner, Qt::AlignVCenter | Qt::AlignTrailing, QString::number(count));
 			};
-			drawHeader(sections.pinned, tr::ayu_GraphitePinnedChats(tr::now), sections.pinnedCount);
-			drawHeader(sections.chats, tr::ayu_GraphiteAllChats(tr::now), sections.chatsCount);
+			drawHeader(sections.pinned, tr::ayu_GraphitePinnedChats(tr::now), sections.pinnedCount, true);
+			drawHeader(sections.chats, tr::ayu_GraphiteAllChats(tr::now), sections.chatsCount, false);
 		}
 		if (communityModeShown()) {
 			p.restore();

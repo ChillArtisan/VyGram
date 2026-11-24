@@ -739,9 +739,9 @@ void MainWindow::setupBuildTitleLabel() {
 			const QString &online, const QString &connecting, const QString &offline) {
 		const auto state = session ? session->session().mtp().dcstate() : MTP::DisconnectedState;
 		*status = !session ? ConnectionLabel()
-			: (state == MTP::ConnectedState) ? ConnectionLabel{ online, QColor(131, 166, 139) }
-			: (state == MTP::ConnectingState) ? ConnectionLabel{ connecting, QColor(228, 177, 110) }
-			: ConnectionLabel{ offline, QColor(133, 129, 123) };
+			: (state == MTP::ConnectedState) ? ConnectionLabel{ online.toUpper(), QColor(131, 166, 139) }
+			: (state == MTP::ConnectingState) ? ConnectionLabel{ connecting.toUpper(), QColor(228, 177, 110) }
+			: ConnectionLabel{ offline.toUpper(), QColor(133, 129, 123) };
 		label->update();
 	}, label->lifetime());
 
