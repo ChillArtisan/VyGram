@@ -5542,6 +5542,23 @@ void InnerWidget::setState(WidgetState state) {
 	updateCommunityRequestableGeometry();
 }
 
+void InnerWidget::selectActiveForKeyboard() {
+	if (_state != WidgetState::Default) {
+		selectSkip(1);
+		return;
+	}
+	clearMouseSelection();
+	const auto key = _controller->activeChatEntryCurrent().key;
+	if (const auto row = key ? _shownList->getRow(key) : nullptr) {
+		_collapsedSelected = -1;
+		_selected = row;
+		scrollToDefaultSelected();
+		update();
+	} else if (!_selected && _collapsedSelected < 0) {
+		selectSkip(1);
+	}
+}
+
 void InnerWidget::selectSkip(int32 direction) {
 	clearMouseSelection();
 	if (_state == WidgetState::Default) {

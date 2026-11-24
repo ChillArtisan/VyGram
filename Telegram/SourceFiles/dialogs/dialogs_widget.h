@@ -113,6 +113,7 @@ public:
 		not_null<Data::Forum*> forum,
 		const Window::SectionShow &params);
 	void setInnerFocus(bool unfocusSearch = false);
+	void focusListForKeyboard();
 	[[nodiscard]] bool searchHasFocus() const;
 
 	[[nodiscard]] Data::Forum *openedForum() const;

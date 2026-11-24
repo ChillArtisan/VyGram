@@ -9327,5 +9327,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_vygram_protection_passcode_off" = "Local passcode is unavailable for this profile.";
 "lng_chat_archive_filters" = "Filter saved messages";
 "lng_vygram_command_palette" = "Command palette";
+"lng_vygram_shortcut_help" = "Keyboard shortcuts";
+"lng_vygram_shortcut_focus_list" = "Focus chat list";
+"lng_vygram_shortcut_focus_composer" = "Focus message field";
+"lng_vygram_shortcut_message_menu" = "Selected message actions";
+"lng_vygram_shortcut_chat_info" = "Chat info panel";
 "lng_vygram_command_query" = "Find a command or chat";
 "lng_vygram_command_global_search" = "Search all messages";

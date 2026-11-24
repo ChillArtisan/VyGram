@@ -2881,6 +2881,25 @@ HistoryView::SelectedQuote HistoryInner::selectedQuote(
 	return view->selectedQuote(_selectedTextSelection);
 }
 
+bool HistoryInner::showKeyboardContextMenu(not_null<HistoryItem*> item) {
+	const auto view = viewByItem(item);
+	const auto top = view ? itemTop(view) : -1;
+	if (top < 0) {
+		return false;
+	}
+	_accessibilityFocusedItem = item;
+	const auto inner = view->innerGeometry();
+	const auto local = QPoint(
+		inner.x() + style::ConvertScale(24),
+		top + std::min(view->height(), style::ConvertScale(48)));
+	auto e = QContextMenuEvent(
+		QContextMenuEvent::Keyboard,
+		local,
+		mapToGlobal(local));
+	showContextMenu(&e);
+	return true;
+}
+
 void HistoryInner::contextMenuEvent(QContextMenuEvent *e) {
 	showContextMenu(e);
 }

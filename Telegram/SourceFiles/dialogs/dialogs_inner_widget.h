@@ -157,6 +157,7 @@ public:
 	void changeOpenedCommunity(Data::CommunityInfo *community);
 	void showSavedSublists();
 	void selectSkip(int32 direction);
+	void selectActiveForKeyboard();
 	void selectSkipPage(int32 pixels, int32 direction);
 
 	void dragLeft();

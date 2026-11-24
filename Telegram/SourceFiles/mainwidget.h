@@ -191,6 +191,8 @@ public:
 	Image *newBackgroundThumb();
 
 	void setInnerFocus();
+	bool focusChatListForKeyboard();
+	bool focusComposerForKeyboard();
 
 	bool contentOverlapped(const QRect &globalRect);
 

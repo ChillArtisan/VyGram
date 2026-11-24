@@ -1318,6 +1318,25 @@ Image *MainWidget::newBackgroundThumb() {
 		: nullptr;
 }
 
+bool MainWidget::focusChatListForKeyboard() {
+	if (!_dialogs || _dialogs->isHidden()) {
+		return false;
+	}
+	_dialogs->focusListForKeyboard();
+	return true;
+}
+
+bool MainWidget::focusComposerForKeyboard() {
+	if (_mainSection && !_mainSection->isHidden()) {
+		_mainSection->setInnerFocus();
+		return true;
+	} else if (_history->peer() && !_history->isHidden()) {
+		_history->setInnerFocus();
+		return true;
+	}
+	return false;
+}
+
 void MainWidget::setInnerFocus() {
 	const auto setTo = [&](auto &&widget) {
 		if (widget->isHidden()) {

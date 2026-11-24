@@ -2807,6 +2807,13 @@ void HistoryWidget::setupShortcuts() {
 			controller()->searchInChat(_history);
 			return true;
 		});
+		request->check(Command::MessageMenu, 1) && request->handle([=] {
+			return showKeyboardMessageMenu();
+		});
+		request->check(Command::ToggleChatInfo, 1) && request->handle([=] {
+			_topBar->toggleInfo();
+			return true;
+		});
 		request->check(Command::ShowChatMenu, 1) && request->handle([=] {
 			Window::ActivateWindow(controller());
 			_topBar->showPeerMenu();
@@ -9422,6 +9429,27 @@ HistoryItem *HistoryWidget::lookupReplyNavItem(FullMsgId itemId) const {
 		}
 	}
 	return nullptr;
+}
+
+bool HistoryWidget::showKeyboardMessageMenu() {
+	if (!_history || !_list) {
+		return false;
+	}
+	const auto id = _replyTo.messageId.msg
+		? _replyTo.messageId
+		: FullMsgId(
+			_history->peer->id,
+			_highlighter.latestSingleHighlightedMsgId());
+	auto item = id.msg ? session().data().message(id) : nullptr;
+	if (!item) {
+		const auto last = _history->findLastDisplayed();
+		item = last ? last->data().get() : nullptr;
+	}
+	if (!item) {
+		return false;
+	}
+	controller()->showMessage(item);
+	return _list->showKeyboardContextMenu(item);
 }
 
 bool HistoryWidget::replyToPreviousMessage() {

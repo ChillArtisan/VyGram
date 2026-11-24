@@ -6,24 +6,20 @@
 #include <QtGui/QPainter>
 #include <QtGui/QPixmap>
 
-namespace Ui {
+#include <vector>
 
-inline void PaintGraphiteSurface(
+namespace Ui {
+namespace details {
+
+inline void ComposeGraphiteSurface(
 		QPainter &p,
 		QRect bounds,
-		QRect clip,
 		int surface,
 		int grainOpacity) {
-	clip = clip.intersected(bounds);
-	if (!surface || clip.isEmpty()) {
-		return;
-	}
-	p.save();
-	p.setClipRect(clip, Qt::IntersectClip);
 	if (surface == 2) {
 		static const auto contours = QPixmap(u":/gui/graphite/topographic.png"_q);
 		p.setOpacity(0.06);
-		p.drawTiledPixmap(clip, contours, clip.topLeft() - bounds.topLeft());
+		p.drawTiledPixmap(bounds, contours);
 	} else if (surface == 3) {
 		static const auto landscape = QPixmap(u":/gui/graphite/navigation.jpg"_q);
 		const auto w = std::min(bounds.width(), style::ConvertScale(250));
@@ -35,20 +31,98 @@ inline void PaintGraphiteSurface(
 		const auto step = style::ConvertScale(28);
 		p.setOpacity(0.07);
 		p.setPen(QColor(220, 207, 183));
-		const auto origin = clip.topLeft() - bounds.topLeft();
-		for (auto x = clip.left() - origin.x() % step; x <= clip.right(); x += step) {
-			p.drawLine(x, clip.top(), x, clip.bottom());
+		for (auto x = bounds.left(); x <= bounds.right(); x += step) {
+			p.drawLine(x, bounds.top(), x, bounds.bottom());
 		}
-		for (auto y = clip.top() - origin.y() % step; y <= clip.bottom(); y += step) {
-			p.drawLine(clip.left(), y, clip.right(), y);
+		for (auto y = bounds.top(); y <= bounds.bottom(); y += step) {
+			p.drawLine(bounds.left(), y, bounds.right(), y);
 		}
 	}
 	if (grainOpacity > 0) {
 		static const auto grain = QPixmap(u":/gui/graphite/grain.png"_q);
 		p.setOpacity(std::clamp(grainOpacity, 0, 10) / 100.);
-		p.drawTiledPixmap(clip, grain, clip.topLeft() - bounds.topLeft());
+		p.drawTiledPixmap(bounds, grain);
 	}
-	p.restore();
+}
+
+struct GraphiteSurfaceCache {
+	QSize size;
+	qreal ratio = 0.;
+	int surface = 0;
+	int grain = 0;
+	QPixmap pixmap;
+};
+
+// WHY: blending the tiled textures with opacity on every scroll frame
+// costs a full-window composite, so each surface is composed once per
+// size and later frames only blit the prepared premultiplied pixmap.
+inline const QPixmap &GraphiteSurfacePixmap(
+		QSize size,
+		qreal ratio,
+		int surface,
+		int grainOpacity) {
+	static auto cache = std::vector<GraphiteSurfaceCache>();
+	for (auto i = begin(cache); i != end(cache); ++i) {
+		if (i->size == size
+			&& i->ratio == ratio
+			&& i->surface == surface
+			&& i->grain == grainOpacity) {
+			if (i != begin(cache)) {
+				std::rotate(begin(cache), i, i + 1);
+			}
+			return cache.front().pixmap;
+		}
+	}
+	constexpr auto kMaxCached = 8;
+	if (cache.size() >= kMaxCached) {
+		cache.pop_back();
+	}
+	auto image = QImage(
+		size * ratio,
+		QImage::Format_ARGB32_Premultiplied);
+	image.setDevicePixelRatio(ratio);
+	image.fill(Qt::transparent);
+	{
+		auto q = QPainter(&image);
+		ComposeGraphiteSurface(q, QRect(QPoint(), size), surface, grainOpacity);
+	}
+	cache.insert(begin(cache), GraphiteSurfaceCache{
+		.size = size,
+		.ratio = ratio,
+		.surface = surface,
+		.grain = grainOpacity,
+		.pixmap = QPixmap::fromImage(std::move(image)),
+	});
+	return cache.front().pixmap;
+}
+
+} // namespace details
+
+inline void PaintGraphiteSurface(
+		QPainter &p,
+		QRect bounds,
+		QRect clip,
+		int surface,
+		int grainOpacity) {
+	clip = clip.intersected(bounds);
+	if (!surface || clip.isEmpty() || bounds.isEmpty()) {
+		return;
+	}
+	const auto ratio = p.device() ? p.device()->devicePixelRatioF() : 1.;
+	const auto &pixmap = details::GraphiteSurfacePixmap(
+		bounds.size(),
+		ratio,
+		surface,
+		grainOpacity);
+	const auto from = clip.translated(-bounds.topLeft());
+	p.drawPixmap(
+		QRectF(clip),
+		pixmap,
+		QRectF(
+			from.x() * ratio,
+			from.y() * ratio,
+			from.width() * ratio,
+			from.height() * ratio));
 }
 
 } // namespace Ui

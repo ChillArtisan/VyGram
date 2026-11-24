@@ -57,6 +57,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_instance.h"
 #include "inline_bots/bot_attach_web_view.h"
 #include "mainwidget.h"
+#include "settings/sections/settings_shortcuts.h"
 #include "tray.h"
 #include "core/click_handler_types.h" // ClickHandlerContext.
 #include "core/crash_reports.h"
@@ -2069,6 +2070,22 @@ void Application::startShortcuts() {
 					}
 				}
 				return true;
+			});
+		}
+		for (const auto command : { Command::FocusChatList, Command::FocusComposer, Command::ShowShortcuts }) {
+			request->check(command) && request->handle([=] {
+				const auto window = activeWindow();
+				const auto session = window ? window->sessionController() : nullptr;
+				if (!session || passcodeLocked() || window->locked() || session->isLayerShown()) {
+					return false;
+				} else if (command == Command::ShowShortcuts) {
+					session->showSettings(::Settings::ShortcutsId());
+					return true;
+				}
+				const auto content = session->content();
+				return ((command == Command::FocusChatList)
+					? content->focusChatListForKeyboard()
+					: content->focusComposerForKeyboard());
 			});
 		}
 		request->check(Command::Quit) && request->handle([] {

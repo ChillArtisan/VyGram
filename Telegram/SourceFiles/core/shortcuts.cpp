@@ -92,6 +92,11 @@ const auto CommandByName = base::flat_map<QString, Command>{
 	{ u"toggle_chat_mute"_q              , Command::ToggleChatMute },
 	{ u"open_settings"_q                 , Command::OpenSettings },
 	{ u"command_palette"_q               , Command::Palette },
+	{ u"message_menu"_q                  , Command::MessageMenu },
+	{ u"focus_chat_list"_q               , Command::FocusChatList },
+	{ u"focus_composer"_q                , Command::FocusComposer },
+	{ u"toggle_chat_info"_q              , Command::ToggleChatInfo },
+	{ u"show_shortcuts"_q                , Command::ShowShortcuts },
 	{ u"search"_q                        , Command::Search },
 
 	{ u"previous_chat"_q                 , Command::ChatPrevious },
@@ -546,6 +551,12 @@ void Manager::fillDefaults() {
 
 	set(u"ctrl+9"_q                  , Command::ShowArchive);
 	set(u"ctrl+j"_q                  , Command::OpenDownloads);
+	set(u"shift+f10"_q               , Command::MessageMenu);
+	set(u"menu"_q                    , Command::MessageMenu);
+	set(u"alt+left"_q                , Command::FocusChatList);
+	set(u"alt+right"_q               , Command::FocusComposer);
+	set(u"ctrl+shift+i"_q            , Command::ToggleChatInfo);
+	set(u"f1"_q                      , Command::ShowShortcuts);
 
 	set(u"ctrl+r"_q                  , Command::ReadChat);
 
@@ -962,7 +973,8 @@ bool HandleLayoutShortcut(not_null<QKeyEvent*> event) {
 		return false;
 	}
 	for (const auto command : { Command::OpenSettings, Command::Palette, Command::ChatSelf,
-			Command::ShowContacts, Command::OpenDownloads, Command::ToggleChatMute, Command::Search }) {
+			Command::ShowContacts, Command::OpenDownloads, Command::ToggleChatMute, Command::Search,
+			Command::ToggleChatInfo }) {
 		if (!i->second.contains(command)) {
 			continue;
 		}

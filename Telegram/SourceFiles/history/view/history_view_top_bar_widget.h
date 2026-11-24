@@ -135,6 +135,9 @@ public:
 		int narrowWidth,
 		float64 narrowRatio);
 	void showPeerMenu();
+	void toggleInfo() {
+		toggleInfoSection();
+	}
 
 protected:
 	void paintEvent(QPaintEvent *e) override;

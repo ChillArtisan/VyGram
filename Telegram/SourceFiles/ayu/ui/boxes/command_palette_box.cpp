@@ -7,6 +7,7 @@
 #include "base/event_filter.h"
 #include "core/shortcuts.h"
 #include "settings/settings_common.h"
+#include "settings/sections/settings_shortcuts.h"
 #include "styles/style_menu_icons.h"
 #include "ui/widgets/labels.h"
 #include "data/data_peer.h"
@@ -115,6 +116,9 @@ void Palette(
 		} },
 		{ u"protection"_q, tr::lng_vygram_protection_title(tr::now), &st::menuIconLock, std::nullopt, [=](QString) {
 			ShowProtectionStatus(controller);
+		} },
+		{ u"shortcuts"_q, tr::lng_vygram_shortcut_help(tr::now), &st::menuIconShortcut, Command::ShowShortcuts, [=](QString) {
+			controller->showSettings(Settings::ShortcutsId());
 		} },
 	};
 	for (const auto row : *session->data().chatsList()->indexed()) {

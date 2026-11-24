@@ -96,6 +96,11 @@ enum class Command {
 	OpenDownloads,
 	OpenSettings,
 	ToggleChatMute,
+	MessageMenu,
+	FocusChatList,
+	FocusComposer,
+	ToggleChatInfo,
+	ShowShortcuts,
 };
 
 [[maybe_unused]] constexpr auto kShowFolder = {

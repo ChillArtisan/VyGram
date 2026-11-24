@@ -611,6 +611,7 @@ private:
 	void cancelReplyAfterMediaSend(bool lastKeyboardUsed);
 	[[nodiscard]] HistoryItem *lookupReplyNavItem(FullMsgId itemId) const;
 	bool replyToPreviousMessage();
+	bool showKeyboardMessageMenu();
 	bool replyToNextMessage();
 	[[nodiscard]] bool showSlowmodeError();
 

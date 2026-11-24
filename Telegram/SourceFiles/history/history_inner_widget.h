@@ -254,6 +254,7 @@ public:
 	void setChooseReportReason(Data::ReportInput reportInput);
 	void clearChooseReportReason();
 	void toggleRemoveFromUserpics(bool remove);
+	bool showKeyboardContextMenu(not_null<HistoryItem*> item);
 
 	// -1 if should not be visible, -2 if bad history()
 	[[nodiscard]] int itemTop(const HistoryItem *item) const;

@@ -2804,6 +2804,15 @@ void Widget::setInnerFocus(bool unfocusSearch) {
 	}
 }
 
+void Widget::focusListForKeyboard() {
+	if (_childList) {
+		_childList->focusListForKeyboard();
+		return;
+	}
+	setInnerFocus(true);
+	_inner->selectActiveForKeyboard();
+}
+
 bool Widget::searchHasFocus() const {
 	return _searchHasFocus;
 }
