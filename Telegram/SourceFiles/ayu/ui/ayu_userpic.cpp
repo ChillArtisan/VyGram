@@ -12,6 +12,13 @@
 #include "ui/image/image_prepare.h"
 #include "ui/style/style_core.h"
 #include "base/algorithm.h"
+#include "data/data_channel.h"
+#include "data/data_peer.h"
+#include "data/data_user.h"
+#include "ui/painter.h"
+#include "window/themes/window_theme.h"
+
+#include <QPainterPath>
 
 #include <QRectF>
 
@@ -46,6 +53,91 @@ double ComputeRadiusF(double size) {
 
 bool IsCircle() {
 	return AyuUiSettings::getAvatarCorners() >= AyuUiSettings::kMaxAvatarCorners;
+}
+
+namespace {
+
+enum TerminalShape {
+	kTerminalNone,
+	kTerminalPerson,
+	kTerminalBot,
+	kTerminalGroup,
+	kTerminalSupergroup,
+	kTerminalChannel,
+};
+
+[[nodiscard]] QPainterPath TerminalShapePath(int kind, QRectF r) {
+	auto path = QPainterPath();
+	const auto w = r.width();
+	const auto h = r.height();
+	const auto polygon = [&](std::initializer_list<QPointF> points) {
+		auto poly = QPolygonF();
+		for (const auto &point : points) {
+			poly << (r.topLeft() + QPointF(point.x() * w, point.y() * h));
+		}
+		path.addPolygon(poly);
+		path.closeSubpath();
+	};
+	switch (kind) {
+	case kTerminalPerson:
+		path.addEllipse(r);
+		break;
+	case kTerminalBot:
+		path.addRoundedRect(r, w * 0.3, h * 0.3);
+		break;
+	case kTerminalGroup:
+		path.addRoundedRect(r, w * 0.14, h * 0.14);
+		break;
+	case kTerminalSupergroup: {
+		constexpr auto c = 0.26;
+		polygon({
+			{ c, 0. }, { 1. - c, 0. }, { 1., c }, { 1., 1. - c },
+			{ 1. - c, 1. }, { c, 1. }, { 0., 1. - c }, { 0., c },
+		});
+	} break;
+	case kTerminalChannel:
+		polygon({
+			{ 0.5, 0. }, { 0.94, 0.25 }, { 0.94, 0.75 },
+			{ 0.5, 1. }, { 0.06, 0.75 }, { 0.06, 0.25 },
+		});
+		break;
+	default:
+		path.addRect(r);
+		break;
+	}
+	return path;
+}
+
+} // namespace
+
+int TerminalShapeKind(not_null<const PeerData*> peer) {
+	if (!Window::Theme::IsTerminalTheme()) {
+		return kTerminalNone;
+	} else if (const auto user = peer->asUser()) {
+		return user->isBot() ? kTerminalBot : kTerminalPerson;
+	} else if (peer->isChat()) {
+		return kTerminalGroup;
+	} else if (const auto channel = peer->asChannel()) {
+		return channel->isBroadcast() ? kTerminalChannel : kTerminalSupergroup;
+	}
+	return kTerminalNone;
+}
+
+QImage ApplyTerminalShape(QImage image, int kind) {
+	auto result = QImage(image.size(), QImage::Format_ARGB32_Premultiplied);
+	result.setDevicePixelRatio(image.devicePixelRatio());
+	result.fill(Qt::transparent);
+	auto p = QPainter(&result);
+	auto hq = PainterHighQualityEnabler(p);
+	p.setPen(Qt::NoPen);
+	p.setBrush(Qt::white);
+	p.drawPath(TerminalShapePath(
+		kind,
+		QRectF(QPointF(), QSizeF(image.size()) / image.devicePixelRatio())));
+	p.setCompositionMode(QPainter::CompositionMode_SourceIn);
+	p.drawImage(0, 0, image);
+	p.end();
+	return result;
 }
 
 uint8 PackedState() {

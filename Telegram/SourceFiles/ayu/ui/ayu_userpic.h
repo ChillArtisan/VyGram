@@ -11,6 +11,7 @@
 #include <QRect>
 
 namespace Media::Streaming { struct FrameRequest; }
+class PeerData;
 
 namespace AyuUserpic {
 
@@ -20,6 +21,9 @@ namespace AyuUserpic {
 [[nodiscard]] bool IsCircle();
 
 [[nodiscard]] uint8 PackedState();
+
+[[nodiscard]] int TerminalShapeKind(not_null<const PeerData*> peer);
+[[nodiscard]] QImage ApplyTerminalShape(QImage image, int kind);
 
 void PaintShape(QPainter &p, int x, int y, int size);
 void PaintShape(QPainter &p, const QRectF &rect);

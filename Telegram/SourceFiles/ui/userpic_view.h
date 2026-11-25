@@ -55,6 +55,7 @@ struct PeerUserpicView {
 	uint32 paletteVersion : 30 = 0;
 	uint32 shape : 2 = 0;
 	uint8 ayuState = 0xFF;
+	uint8 terminalKind = 0;
 };
 
 [[nodiscard]] bool PeerUserpicLoading(const PeerUserpicView &view);
@@ -64,6 +65,7 @@ void ValidateUserpicCache(
 	const QImage *cloud,
 	const EmptyUserpic *empty,
 	int size,
-	PeerUserpicShape shape);
+	PeerUserpicShape shape,
+	int terminalKind = 0);
 
 } // namespace Ui

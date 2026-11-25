@@ -437,6 +437,9 @@ void PeerData::paintUserpic(
 	const auto size = context.size;
 	const auto cloud = userpicCloudImage(view);
 	const auto ratio = style::DevicePixelRatio();
+	const auto terminalKind = (context.shape == Ui::PeerUserpicShape::Auto)
+		? AyuUserpic::TerminalShapeKind(this)
+		: 0;
 	if (context.shape == Ui::PeerUserpicShape::Auto) {
 		context.shape = userpicShape();
 	}
@@ -445,7 +448,8 @@ void PeerData::paintUserpic(
 		cloud,
 		cloud ? nullptr : ensureEmptyUserpic().get(),
 		size * ratio,
-		context.shape);
+		context.shape,
+		terminalKind);
 	p.drawImage(QRect(context.position, QSize(size, size)), view.cached);
 }
 

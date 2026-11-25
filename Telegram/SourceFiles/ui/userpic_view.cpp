@@ -146,7 +146,8 @@ void ValidateUserpicCache(
 		const QImage *cloud,
 		const EmptyUserpic *empty,
 		int size,
-		PeerUserpicShape shape) {
+		PeerUserpicShape shape,
+		int terminalKind) {
 	Expects(cloud != nullptr || empty != nullptr);
 
 	const auto full = QSize(size, size);
@@ -156,6 +157,7 @@ void ValidateUserpicCache(
 	const auto regenerate = (view.cached.size() != QSize(size, size))
 		|| (view.shape != shapeValue)
 		|| (view.ayuState != ayuState)
+		|| (view.terminalKind != terminalKind)
 		|| (cloud && !view.empty.null())
 		|| (empty && empty != view.empty.get())
 		|| (empty && view.paletteVersion != version);
@@ -166,6 +168,25 @@ void ValidateUserpicCache(
 	view.shape = shapeValue;
 	view.paletteVersion = version;
 	view.ayuState = ayuState;
+	view.terminalKind = terminalKind;
+
+	if (terminalKind) {
+		if (cloud) {
+			view.cached = cloud->scaled(
+				full,
+				Qt::IgnoreAspectRatio,
+				Qt::SmoothTransformation);
+		} else {
+			view.cached = QImage(full, QImage::Format_ARGB32_Premultiplied);
+			view.cached.fill(Qt::transparent);
+			auto p = QPainter(&view.cached);
+			empty->paintRounded(p, 0, 0, size, size, 0);
+		}
+		view.cached = AyuUserpic::ApplyTerminalShape(
+			std::move(view.cached),
+			terminalKind);
+		return;
+	}
 
 	const auto ayuOverride = AyuUserpic::ShouldOverrideShape(shape);
 
