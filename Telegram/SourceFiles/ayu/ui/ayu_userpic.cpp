@@ -106,19 +106,23 @@ enum TerminalShape {
 	case kTerminalGroup:
 		path.addRoundedRect(r, w * 0.14, h * 0.14);
 		break;
-	case kTerminalSupergroup: {
-		constexpr auto c = 0.26;
-		polygon({
-			{ c, 0. }, { 1. - c, 0. }, { 1., c }, { 1., 1. - c },
-			{ 1. - c, 1. }, { c, 1. }, { 0., 1. - c }, { 0., c },
-		});
-	} break;
-	case kTerminalChannel:
-		polygon({
-			{ 0.5, 0. }, { 0.94, 0.25 }, { 0.94, 0.75 },
-			{ 0.5, 1. }, { 0.06, 0.75 }, { 0.06, 0.25 },
-		});
+	case kTerminalSupergroup:
+		polygon({ { 0., 0. }, { 0.68, 0. }, { 1., 0.32 }, { 1., 1. }, { 0., 1. } });
 		break;
+	case kTerminalChannel: {
+		const auto big = w * 0.42;
+		const auto tail = w * 0.06;
+		path.moveTo(r.left() + big, r.top());
+		path.lineTo(r.right() - big, r.top());
+		path.arcTo(QRectF(r.right() - 2 * big, r.top(), 2 * big, 2 * big), 90, -90);
+		path.lineTo(r.right(), r.bottom() - big);
+		path.arcTo(QRectF(r.right() - 2 * big, r.bottom() - 2 * big, 2 * big, 2 * big), 0, -90);
+		path.lineTo(r.left() + tail, r.bottom());
+		path.arcTo(QRectF(r.left(), r.bottom() - 2 * tail, 2 * tail, 2 * tail), 270, -90);
+		path.lineTo(r.left(), r.top() + big);
+		path.arcTo(QRectF(r.left(), r.top(), 2 * big, 2 * big), 180, -90);
+		path.closeSubpath();
+	} break;
 	default:
 		path.addRect(r);
 		break;
