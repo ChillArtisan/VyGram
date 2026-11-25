@@ -71,11 +71,29 @@ enum TerminalShape {
 	const auto w = r.width();
 	const auto h = r.height();
 	const auto polygon = [&](std::initializer_list<QPointF> points) {
-		auto poly = QPolygonF();
+		auto poly = std::vector<QPointF>();
 		for (const auto &point : points) {
-			poly << (r.topLeft() + QPointF(point.x() * w, point.y() * h));
+			poly.push_back(r.topLeft() + QPointF(point.x() * w, point.y() * h));
 		}
-		path.addPolygon(poly);
+		const auto radius = w * 0.105;
+		const auto toward = [&](QPointF from, QPointF to) {
+			const auto delta = to - from;
+			const auto length = std::hypot(delta.x(), delta.y());
+			return from + delta * (radius / length);
+		};
+		const auto count = int(poly.size());
+		for (auto i = 0; i != count; ++i) {
+			const auto &corner = poly[i];
+			const auto &prev = poly[(i + count - 1) % count];
+			const auto &next = poly[(i + 1) % count];
+			const auto entry = toward(corner, prev);
+			if (!i) {
+				path.moveTo(entry);
+			} else {
+				path.lineTo(entry);
+			}
+			path.quadTo(corner, toward(corner, next));
+		}
 		path.closeSubpath();
 	};
 	switch (kind) {
