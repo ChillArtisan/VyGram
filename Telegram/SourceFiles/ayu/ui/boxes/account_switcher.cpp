@@ -15,6 +15,7 @@
 #include "main/main_session.h"
 #include "mainwindow.h"
 #include "mtproto/mtp_instance.h"
+#include "mtproto/mtproto_dc_options.h"
 #include "settings/sections/settings_chat.h"
 #include "ui/layers/generic_box.h"
 #include "ui/painter.h"
@@ -250,7 +251,9 @@ bool SwitchAccountRelative(
 	if (count < 2) {
 		return false;
 	}
-	const auto i = ranges::find(list, &controller->session().account());
+	const auto i = ranges::find(
+		list,
+		not_null(&controller->session().account()));
 	if (i == end(list)) {
 		return false;
 	}

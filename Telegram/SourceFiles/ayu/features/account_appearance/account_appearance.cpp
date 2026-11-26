@@ -178,9 +178,9 @@ template <typename MapKey>
 }
 
 [[nodiscard]] bool ActiveInMainWindow(not_null<Main::Session*> session) {
-	const auto account = &session->account();
+	const auto account = not_null(&session->account());
 	return Core::App().domain().started()
-		&& (&Core::App().domain().active() == account)
+		&& (&Core::App().domain().active() == account.get())
 		&& !Core::App().separateWindowFor(account);
 }
 
