@@ -524,6 +524,11 @@ int ForumPhotoSize(const Element *view) {
 	return ForumRecord(view) ? style::ConvertScale(AyuSettings::getInstance().graphiteAvatarSize()) : st::msgPhotoSize;
 }
 
+bool ForumInfoInHeader(const Element *view) {
+	const auto message = dynamic_cast<const Message*>(view);
+	return message && message->forumInfoInHeader();
+}
+
 const char kOptionUnlimitedMessageWidth[]
 	= "unlimited-message-width";
 
@@ -2214,18 +2219,21 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 			entry->draw(p, entryContext);
 			p.translate(-entryLeft, -entryTop);
 		}
+		if (!headerInfo.isEmpty()
+			&& !AyuFeatures::MessageShot::ignoreRender(
+				AyuFeatures::MessageShot::RenderPart::Date)) {
+			p.setFont(st::msgDateFont);
+			p.setPen(stm->msgDateFg);
+			_bottomInfo.paint(p, headerInfo.topLeft(), width(),
+				delegate()->elementShownUnread(this), false, context);
+		}
 		if (displayInfo) {
 			const auto bottomSelected = context.selected()
 				|| (!mediaSelectionIntervals.empty()
 					&& (mediaSelectionIntervals.back().top
 						+ mediaSelectionIntervals.back().height
 						>= inner.y() + inner.height()));
-			if (!headerInfo.isEmpty()) {
-				p.setFont(st::msgDateFont);
-				p.setPen(stm->msgDateFg);
-				_bottomInfo.paint(p, headerInfo.topLeft(), width(),
-					delegate()->elementShownUnread(this), false, context);
-			} else {
+			if (headerInfo.isEmpty()) {
 				drawInfo(
 				p,
 				context.withSelection(
@@ -2636,11 +2644,20 @@ void Message::paintCommentsButton(
 	}
 }
 
+bool Message::forumInfoInHeader() const {
+	if (!ForumRecord(this)) {
+		return false;
+	}
+	const auto g = countGeometry();
+	return (g.width() > 0)
+		&& !forumHeaderInfoRect(g.marginsRemoved(recordPadding())).isEmpty();
+}
+
 QRect Message::forumHeaderInfoRect(QRect header) const {
-	if (!ForumRecord(this) || !displayFromName() || !needInfoDisplay()
+	if (!ForumRecord(this) || !displayFromName()
 		|| hidesBottomInfo() || data()->effectId() || logEntryOriginal()
 		|| factcheckBlock() || (media() && media()->isDisplayed()
-			&& (media()->isBubbleTop() || media()->customInfoLayout()))) {
+			&& media()->isBubbleTop())) {
 		return {};
 	}
 	const auto size = _bottomInfo.currentSize();

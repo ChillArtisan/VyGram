@@ -37,6 +37,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/features/message_shot/message_shot.h"
 #include "ayu/ui/ayu_userpic.h"
 #include "ayu/features/filters/filters_controller.h"
+#include "window/themes/window_theme.h"
+#include "styles/style_ayu_styles.h"
 
 
 namespace HistoryView::Reactions {
@@ -46,6 +48,36 @@ constexpr auto kInNonChosenOpacity = 0.12;
 constexpr auto kOutNonChosenOpacity = 0.18;
 constexpr auto kMaxRecentUserpics = 3;
 constexpr auto kMaxNicePerRow = 5;
+
+[[nodiscard]] bool TerminalPills() {
+	return Window::Theme::IsTerminalTheme();
+}
+
+[[nodiscard]] const style::font &CountFont() {
+	return TerminalPills()
+		? st::vygramReactionCountFont
+		: st::semiboldFont;
+}
+
+void PaintTerminalPill(
+		QPainter &p,
+		const QRect &fill,
+		bool chosen,
+		float64 opacity) {
+	auto hq = PainterHighQualityEnabler(p);
+	const auto half = st::lineWidth / 2.;
+	const auto radius = float64(st::vygramReactionRadius);
+	auto pen = (chosen ? st::windowActiveTextFg : st::shadowFg)->p;
+	pen.setWidthF(st::lineWidth);
+	p.setOpacity(opacity);
+	p.setPen(pen);
+	p.setBrush(chosen ? st::dialogsBgActive : st::msgInBg);
+	p.drawRoundedRect(
+		QRectF(fill).marginsRemoved({ half, half, half, half }),
+		radius,
+		radius);
+	p.setPen(Qt::NoPen);
+}
 
 [[nodiscard]] QColor AdaptChosenServiceFg(QColor serviceBg) {
 	serviceBg.setAlpha(std::max(serviceBg.alpha(), 192));
@@ -291,7 +323,7 @@ void InlineList::setButtonCount(Button &button, int count) {
 		button.textWidth = 0;
 	} else {
 		button.text = Lang::FormatCountToShort(count).string;
-		button.textWidth = st::semiboldFont->width(button.text);
+		button.textWidth = CountFont()->width(button.text);
 	}
 }
 
@@ -365,6 +397,9 @@ QSize InlineList::countOptimalSize() {
 	};
 	const auto height = padding.top() + size + padding.bottom();
 	for (auto &button : _buttons) {
+		if (!button.tag && !button.userpics && !button.text.isEmpty()) {
+			button.textWidth = CountFont()->width(button.text);
+		}
 		const auto width = button.tag
 			? (widthBaseTag
 				+ button.textWidth
@@ -484,7 +519,8 @@ void InlineList::paint(
 	const auto tags = areTags();
 	const auto inbubble = (_data.flags & Data::Flag::InBubble);
 	const auto flipped = (_data.flags & Data::Flag::Flipped);
-	p.setFont(tags ? st::reactionInlineTagFont : st::semiboldFont);
+	const auto terminal = !tags && TerminalPills();
+	p.setFont(tags ? st::reactionInlineTagFont : CountFont());
 	for (const auto &button : _buttons) {
 		if (context.reactionInfo
 			&& button.animation
@@ -542,7 +578,11 @@ void InlineList::paint(
 				flipped ? 0 : bubbleSkip,
 				0,
 			});
-			paintSingleBg(p, fill, color, opacity);
+			if (terminal) {
+				PaintTerminalPill(p, fill, chosen, bubbleProgress);
+			} else {
+				paintSingleBg(p, fill, color, opacity);
+			}
 			if (inbubble && !chosen) {
 				p.setOpacity(bubbleProgress);
 			}
@@ -551,7 +591,9 @@ void InlineList::paint(
 			button.image = _owner->resolveReactionImageFor(button.id);
 		}
 
-		const auto textFg = !inbubble
+		const auto textFg = terminal
+			? (chosen ? st::windowActiveTextFg : st::windowSubTextFg)->p
+			: !inbubble
 			? (chosen
 				? QPen(AdaptChosenServiceFg(st->msgServiceBg()->c))
 				: st->msgServiceFg())
@@ -627,10 +669,10 @@ void InlineList::paint(
 			const auto textTop = geometry.y()
 				+ (tags
 					? st::reactionInlineTagNamePosition.y()
-					: ((geometry.height() - st::semiboldFont->height) / 2));
+					: ((geometry.height() - CountFont()->height) / 2));
 			const auto font = tags
 				? st::reactionInlineTagFont
-				: st::semiboldFont;
+				: CountFont();
 			p.drawText(textLeft, textTop + font->ascent, button.text);
 		}
 		if (!bubbleReady) {
@@ -816,7 +858,9 @@ void InlineList::clickHandlerPressedChanged(
 				}
 				return Ui::RippleAnimation::RoundRectMask(
 					geometry.size(),
-					geometry.height() / 2);
+					TerminalPills()
+						? int(st::vygramReactionRadius)
+						: (geometry.height() / 2));
 			}();
 			_ripple = std::make_unique<RippleEffect>(
 				st::defaultRippleAnimation,

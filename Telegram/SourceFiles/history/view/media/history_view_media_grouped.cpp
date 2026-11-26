@@ -31,6 +31,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // AyuGram includes
 #include "ayu/ayu_settings.h"
 #include "ayu/features/message_shot/message_shot.h"
+#include "history/view/history_view_forum.h"
 
 
 namespace HistoryView {
@@ -566,7 +567,9 @@ void GroupedMedia::draw(Painter &p, const PaintContext &context) const {
 	if (_parent->media() == this && (!_parent->hasBubble() || isBubbleBottom())) {
 		auto fullRight = width();
 		auto fullBottom = height();
-		if (needInfoDisplay() && !AyuFeatures::MessageShot::ignoreRender(AyuFeatures::MessageShot::RenderPart::Date)) {
+		if (needInfoDisplay()
+			&& !ForumInfoInHeader(_parent.get())
+			&& !AyuFeatures::MessageShot::ignoreRender(AyuFeatures::MessageShot::RenderPart::Date)) {
 			_parent->drawInfo(
 				p,
 				context,

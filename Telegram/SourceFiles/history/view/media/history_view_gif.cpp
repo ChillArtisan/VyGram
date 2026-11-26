@@ -71,6 +71,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/features/message_shot/message_shot.h"
+#include "history/view/history_view_forum.h"
 
 
 namespace HistoryView {
@@ -1081,7 +1082,9 @@ void Gif::draw(Painter &p, const PaintContext &context) const {
 			}
 		}
 		if (isRound
-			|| ((!bubble || isBubbleBottom()) && needInfoDisplay())) {
+			|| ((!bubble || isBubbleBottom())
+				&& needInfoDisplay()
+				&& !ForumInfoInHeader(_parent.get()))) {
 			_parent->drawInfo(
 				p,
 				context,

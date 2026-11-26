@@ -48,6 +48,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // AyuGram includes
 #include "ayu/ayu_settings.h"
 #include "ayu/features/message_shot/message_shot.h"
+#include "window/themes/window_theme.h"
+#include "styles/style_ayu_icons.h"
+#include "styles/style_ayu_styles.h"
 
 
 namespace HistoryView {
@@ -773,7 +776,15 @@ void Document::draw(
 	const auto innerSize = st::msgFileLayout.thumbSize;
 	const auto inner = QRect(rthumb.x() + (rthumb.width() - innerSize) / 2, rthumb.y() + (rthumb.height() - innerSize) / 2, innerSize, innerSize);
 	const auto radialOpacity = radial ? _animation->radial.opacity() : 1.;
-	if (thumbed) {
+	const auto card = terminalCard();
+	if (card) {
+		paintTerminalCard(
+			p,
+			context,
+			terminalCardRect(st, topMinus, width),
+			loaded,
+			radial);
+	} else if (thumbed) {
 		const auto rounding = thumbRounding(mode, outsideRounding);
 		validateThumbnail(thumbed, st.thumbSize, rounding);
 		p.drawImage(rthumb, thumbed->thumbnail);
@@ -992,6 +1003,12 @@ void Document::draw(
 		drawCornerDownload(p, context, mode);
 	}
 	auto namewidth = width - nameleft - nameright;
+	if (card) {
+		namewidth = st.padding.left()
+			+ terminalCardRect(st, topMinus, width).width()
+			- st::vygramFileCardActionSize
+			- nameleft;
+	}
 	auto statuswidth = namewidth;
 
 	auto voiceStatusOverride = QString();
@@ -1072,7 +1089,7 @@ void Document::draw(
 	}
 
 	auto statusText = voiceStatusOverride.isEmpty() ? _statusText : voiceStatusOverride;
-	p.setFont(st::normalFont);
+	p.setFont(card ? st::vygramFileStatusFont : st::normalFont);
 	p.setPen(stm->mediaFg);
 	p.drawTextLeft(nameleft, statustop, width, statusText);
 
@@ -1226,6 +1243,114 @@ bool Document::downloadInCorner() const {
 		&& !_data->inappPlaybackFailed();
 }
 
+bool Document::terminalCard() const {
+	if (!Window::Theme::IsTerminalTheme()
+		|| Has<HistoryDocumentThumbed>()
+		|| Has<HistoryDocumentVoice>()
+		|| _transcribedRound
+		|| _drawTtl
+		|| _data->isSong()
+		|| _data->isVoiceMessage()
+		|| _data->isVideoMessage()
+		|| downloadInCorner()) {
+		return false;
+	}
+	ensureDataMediaCreated();
+	return !_dataMedia->canBePlayed();
+}
+
+QRect Document::terminalCardRect(
+		const style::HistoryFileLayout &st,
+		int topMinus,
+		int width) const {
+	const auto grow = st::vygramFileCardGrow;
+	const auto cardWidth = std::min(
+		width - st.padding.left() - st.padding.right(),
+		st::vygramFileCardMaxWidth);
+	return style::rtlrect(
+		st.padding.left(),
+		st.padding.top() - topMinus - grow,
+		cardWidth,
+		st.thumbSize + 2 * grow,
+		width);
+}
+
+void Document::paintTerminalCard(
+		Painter &p,
+		const PaintContext &context,
+		QRect card,
+		bool loaded,
+		bool radial) const {
+	const auto hovered = ClickHandler::showAsActive(loaded ? _openl : _savel)
+		|| ClickHandler::showAsActive(_cancell);
+	{
+		auto hq = PainterHighQualityEnabler(p);
+		const auto half = st::lineWidth / 2.;
+		const auto radius = float64(st::vygramFileCardRadius);
+		auto pen = (hovered ? st::windowActiveTextFg : st::shadowFg)->p;
+		pen.setWidthF(st::lineWidth);
+		p.setPen(pen);
+		p.setBrush(context.selected() ? st::msgInBgSelected : st::msgInBg);
+		p.drawRoundedRect(
+			QRectF(card).marginsRemoved({ half, half, half, half }),
+			radius,
+			radius);
+		p.setPen(Qt::NoPen);
+	}
+	const auto actionSize = st::vygramFileCardActionSize;
+	const auto iconArea = QRect(card.x(), card.y(), actionSize, card.height());
+	const auto &icon = _data->isImage()
+		? st::vygramFileCardImage
+		: st::vygramFileCardIcon;
+	icon.paintInCenter(p, iconArea, st::windowSubTextFg->c);
+
+	const auto action = QRect(
+		card.x() + card.width() - actionSize,
+		card.y(),
+		actionSize,
+		card.height());
+	if (_data->loading() || _data->uploading() || radial) {
+		const auto size = st::vygramFileCardRadialSize;
+		const auto ring = QRect(
+			action.x() + (action.width() - size) / 2,
+			action.y() + (action.height() - size) / 2,
+			size,
+			size);
+		if (radial) {
+			p.setOpacity(_animation->radial.opacity());
+			_animation->radial.draw(
+				p,
+				ring,
+				st::vygramFileCardRadialLine,
+				st::windowActiveTextFg);
+			p.setOpacity(1.);
+		}
+		if (_data->loading() || _data->uploading()) {
+			auto hq = PainterHighQualityEnabler(p);
+			auto pen = st::windowSubTextFg->p;
+			pen.setWidthF(st::vygramFileCardRadialLine);
+			pen.setCapStyle(Qt::RoundCap);
+			p.setPen(pen);
+			const auto center = QRectF(ring).center();
+			const auto cross = st::vygramFileCardCancelSize / 2.;
+			p.drawLine(
+				center - QPointF(cross, cross),
+				center + QPointF(cross, cross));
+			p.drawLine(
+				center + QPointF(-cross, cross),
+				center + QPointF(cross, -cross));
+			p.setPen(Qt::NoPen);
+		}
+	} else if (!loaded && _data->status != FileUploadFailed) {
+		st::vygramFileCardDownload.paintInCenter(
+			p,
+			action,
+			(ClickHandler::showAsActive(_savel)
+				? st::windowActiveTextFg
+				: st::windowSubTextFg)->c);
+	}
+}
+
 void Document::drawCornerDownload(
 		Painter &p,
 		const PaintContext &context,
@@ -1373,6 +1498,12 @@ TextState Document::textState(
 	} else {
 		if (const auto state = cornerDownloadTextState(point, request, mode); state.link) {
 			return state;
+		}
+		if ((_data->loading() || _data->uploading())
+			&& terminalCard()
+			&& terminalCardRect(st, topMinus, width).contains(point)) {
+			result.link = _cancell;
+			return result;
 		}
 		if ((_data->loading() || _data->uploading()) && inner.contains(point) && !downloadInCorner()) {
 			result.link = _cancell;

@@ -18,6 +18,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/info_controller.h"
 #include "styles/style_layers.h"
 
+// AyuGram includes
+#include "window/themes/window_theme.h"
+
+
 namespace Info {
 
 SectionWidget::SectionWidget(
@@ -125,7 +129,10 @@ std::shared_ptr<Window::SectionMemento> SectionWidget::createMemento() {
 object_ptr<Ui::LayerWidget> SectionWidget::moveContentToLayer(
 		QRect bodyGeometry) {
 	if (_content->controller()->wrap() != Wrap::Narrow
-		|| width() < LayerWidget::MinimalSupportedWidth()) {
+		|| width() < LayerWidget::MinimalSupportedWidth()
+		|| (Window::Theme::IsTerminalTheme()
+			&& (_content->controller()->section().type()
+				== Section::Type::Settings))) {
 		return nullptr;
 	}
 	return MoveMemento(

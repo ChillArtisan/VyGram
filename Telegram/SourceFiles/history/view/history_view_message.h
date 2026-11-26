@@ -259,6 +259,7 @@ public:
 	bool displayFromPhoto() const override;
 	bool hasFromName() const override;
 	bool displayFromName() const override;
+	[[nodiscard]] bool forumInfoInHeader() const;
 	bool displayForwardedFrom() const override;
 	bool hasOutLayout() const override;
 	bool drawBubble() const override;

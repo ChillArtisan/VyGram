@@ -80,3 +80,38 @@ ayuHistoryFileOutPlugin: icon {{ "ayu/history_file_plugin", historyFileOutIconFg
 ayuHistoryFileOutPluginSelected: icon {{ "ayu/history_file_plugin", historyFileOutIconFgSelected }};
 
 menuIconClearAttention: icon {{ "menu/clear", menuIconAttentionColor }};
+
+vygramFileCardIcon: icon {{ "menu/file", menuIconColor }};
+vygramFileCardImage: icon {{ "menu/image", menuIconColor }};
+vygramFileCardDownload: icon {{ "menu/download", menuIconColor }};
+
+vygramFolderCat: icon {{ "menu/stickers", menuIconColor }};
+vygramFolderBook: icon {{ "menu/group_log", menuIconColor }};
+vygramFolderMoney: icon {{ "menu/earn", menuIconColor }};
+vygramFolderGame: icon {{ "menu/start_stream", menuIconColor }};
+vygramFolderLight: icon {{ "menu/header_mode_day", menuIconColor }};
+vygramFolderLike: icon {{ "menu/affiliate_simple", menuIconColor }};
+vygramFolderNote: icon {{ "menu/edit", menuIconColor }};
+vygramFolderPalette: icon {{ "menu/palette", menuIconColor }};
+vygramFolderTravel: icon {{ "menu/payment_address", menuIconColor }};
+vygramFolderSport: icon {{ "menu/timer", menuIconColor }};
+vygramFolderFavorite: icon {{ "menu/favorite", menuIconColor }};
+vygramFolderStudy: icon {{ "menu/experimental", menuIconColor }};
+vygramFolderAirplane: icon {{ "menu/send", menuIconColor }};
+vygramFolderPrivate: icon {{ "menu/name_show", menuIconColor }};
+vygramFolderGroups: icon {{ "menu/groups", menuIconColor }};
+vygramFolderAll: icon {{ "menu/chats", menuIconColor }};
+vygramFolderUnread: icon {{ "menu/unread", menuIconColor }};
+vygramFolderBots: icon {{ "menu/bot", menuIconColor }};
+vygramFolderCrown: icon {{ "menu/nft_wear", menuIconColor }};
+vygramFolderFlower: icon {{ "menu/stars_share", menuIconColor }};
+vygramFolderHome: icon {{ "menu/shop", menuIconColor }};
+vygramFolderLove: icon {{ "menu/stories_save", menuIconColor }};
+vygramFolderMask: icon {{ "menu/fake", menuIconColor }};
+vygramFolderParty: icon {{ "menu/gift_premium", menuIconColor }};
+vygramFolderTrade: icon {{ "menu/stats", menuIconColor }};
+vygramFolderWork: icon {{ "menu/personal", menuIconColor }};
+vygramFolderUnmuted: icon {{ "menu/unmute", menuIconColor }};
+vygramFolderChannels: icon {{ "menu/channel", menuIconColor }};
+vygramFolderCustom: icon {{ "menu/show_in_folder", menuIconColor }};
+vygramFolderSetup: icon {{ "menu/manage", menuIconColor }};

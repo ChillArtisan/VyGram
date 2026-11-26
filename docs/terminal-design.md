@@ -86,6 +86,14 @@ group consecutive messages by author and can show real message IDs when
 space permits. The command palette opens with Ctrl+K and searches chats
 and client actions. Command history is stored per account in local settings.
 
+Settings open in the main column instead of a narrow layer, as a centered
+680 px column; sections with a flexible header (Business, Stars) keep full
+width. Files without a preview are drawn as bordered cards with an outline
+icon and a download or cancel action on the right. Reaction pills use a 4 px
+radius, a 1 px border and a monospace count; the chosen one is outlined in
+the accent color. Folder buttons in the rail use outline icons. Forum records
+show the time next to the author for photos, videos and albums as well.
+
 Native authorization, media, notification, and call screens use the same
 palette and continue to use their existing workflows.
 

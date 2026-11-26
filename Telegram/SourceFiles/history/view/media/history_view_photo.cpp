@@ -48,6 +48,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // AyuGram includes
 #include "ayu/features/message_shot/message_shot.h"
 #include "ayu/ui/ayu_userpic.h"
+#include "history/view/history_view_forum.h"
 
 
 namespace HistoryView {
@@ -499,7 +500,7 @@ void Photo::draw(Painter &p, const PaintContext &context) const {
 	if (!inWebPage && (!bubble || isBubbleBottom())) {
 		auto fullRight = paintx + paintw;
 		auto fullBottom = painty + painth;
-		if (needInfoDisplay()) {
+		if (needInfoDisplay() && !ForumInfoInHeader(_parent.get())) {
 			_parent->drawInfo(
 				p,
 				context,

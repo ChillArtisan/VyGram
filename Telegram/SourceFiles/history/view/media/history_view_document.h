@@ -21,6 +21,10 @@ namespace Ui::Text {
 class String;
 } // namespace Ui::Text
 
+namespace style {
+struct HistoryFileLayout;
+} // namespace style
+
 namespace HistoryView {
 
 using TtlPaintCallback = Fn<void(QPainter&, QRect, QColor)>;
@@ -146,6 +150,17 @@ private:
 	[[nodiscard]] int thumbedLinkMaxWidth() const;
 
 	[[nodiscard]] bool downloadInCorner() const;
+	[[nodiscard]] bool terminalCard() const;
+	[[nodiscard]] QRect terminalCardRect(
+		const style::HistoryFileLayout &st,
+		int topMinus,
+		int width) const;
+	void paintTerminalCard(
+		Painter &p,
+		const PaintContext &context,
+		QRect card,
+		bool loaded,
+		bool radial) const;
 	void drawCornerDownload(
 		Painter &p,
 		const PaintContext &context,

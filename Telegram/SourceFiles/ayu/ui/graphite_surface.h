@@ -2,6 +2,7 @@
 #pragma once
 
 #include "ui/style/style_core_scale.h"
+#include "styles/palette.h"
 
 #include <QtGui/QPainter>
 #include <QtGui/QPixmap>
@@ -15,7 +16,8 @@ inline void ComposeGraphiteSurface(
 		QPainter &p,
 		QRect bounds,
 		int surface,
-		int grainOpacity) {
+		int grainOpacity,
+		QColor line) {
 	if (surface == 2) {
 		static const auto contours = QPixmap(u":/gui/graphite/topographic.png"_q);
 		p.setOpacity(0.06);
@@ -30,7 +32,7 @@ inline void ComposeGraphiteSurface(
 	} else if (surface == 4) {
 		const auto step = style::ConvertScale(28);
 		p.setOpacity(0.07);
-		p.setPen(QColor(220, 207, 183));
+		p.setPen(line);
 		for (auto x = bounds.left(); x <= bounds.right(); x += step) {
 			p.drawLine(x, bounds.top(), x, bounds.bottom());
 		}
@@ -50,6 +52,7 @@ struct GraphiteSurfaceCache {
 	qreal ratio = 0.;
 	int surface = 0;
 	int grain = 0;
+	QRgb line = 0;
 	QPixmap pixmap;
 };
 
@@ -60,13 +63,15 @@ inline const QPixmap &GraphiteSurfacePixmap(
 		QSize size,
 		qreal ratio,
 		int surface,
-		int grainOpacity) {
+		int grainOpacity,
+		QColor line) {
 	static auto cache = std::vector<GraphiteSurfaceCache>();
 	for (auto i = begin(cache); i != end(cache); ++i) {
 		if (i->size == size
 			&& i->ratio == ratio
 			&& i->surface == surface
-			&& i->grain == grainOpacity) {
+			&& i->grain == grainOpacity
+			&& i->line == line.rgba()) {
 			if (i != begin(cache)) {
 				std::rotate(begin(cache), i, i + 1);
 			}
@@ -84,13 +89,19 @@ inline const QPixmap &GraphiteSurfacePixmap(
 	image.fill(Qt::transparent);
 	{
 		auto q = QPainter(&image);
-		ComposeGraphiteSurface(q, QRect(QPoint(), size), surface, grainOpacity);
+		ComposeGraphiteSurface(
+			q,
+			QRect(QPoint(), size),
+			surface,
+			grainOpacity,
+			line);
 	}
 	cache.insert(begin(cache), GraphiteSurfaceCache{
 		.size = size,
 		.ratio = ratio,
 		.surface = surface,
 		.grain = grainOpacity,
+		.line = line.rgba(),
 		.pixmap = QPixmap::fromImage(std::move(image)),
 	});
 	return cache.front().pixmap;
@@ -113,7 +124,8 @@ inline void PaintGraphiteSurface(
 		bounds.size(),
 		ratio,
 		surface,
-		grainOpacity);
+		grainOpacity,
+		st::windowFg->c);
 	const auto from = clip.translated(-bounds.topLeft());
 	p.drawPixmap(
 		QRectF(clip),

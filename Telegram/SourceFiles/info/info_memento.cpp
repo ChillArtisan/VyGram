@@ -36,7 +36,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "main/main_session.h"
 
+// AyuGram includes
+#include "window/themes/window_theme.h"
+
+
 namespace Info {
+namespace {
+
+[[nodiscard]] bool KeepInMainColumn(const Section &section) {
+	return (section.type() == Section::Type::Settings)
+		&& Window::Theme::IsTerminalTheme();
+}
+
+} // namespace
 
 Memento::Memento(not_null<PeerData*> peer)
 : Memento(peer, [&] {
@@ -311,7 +323,8 @@ object_ptr<Window::SectionWidget> Memento::createWidget(
 object_ptr<Ui::LayerWidget> Memento::createLayer(
 		not_null<Window::SessionController*> controller,
 		const QRect &geometry) {
-	if (geometry.width() >= LayerWidget::MinimalSupportedWidth()) {
+	if (geometry.width() >= LayerWidget::MinimalSupportedWidth()
+		&& (_stack.empty() || !KeepInMainColumn(_stack.back()->section()))) {
 		return object_ptr<LayerWidget>(controller, this);
 	}
 	return nullptr;
@@ -349,7 +362,8 @@ object_ptr<Window::SectionWidget> MoveMemento::createWidget(
 object_ptr<Ui::LayerWidget> MoveMemento::createLayer(
 		not_null<Window::SessionController*> controller,
 		const QRect &geometry) {
-	if (geometry.width() < LayerWidget::MinimalSupportedWidth()) {
+	if (geometry.width() < LayerWidget::MinimalSupportedWidth()
+		|| KeepInMainColumn(_content->controller()->section())) {
 		return nullptr;
 	}
 	return object_ptr<LayerWidget>(controller, this);

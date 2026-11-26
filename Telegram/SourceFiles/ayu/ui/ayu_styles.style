@@ -124,3 +124,17 @@ ayuServiceTimeBadgeVerticalPadding: 2px;
 ayuServiceTimeBadgeGap: 8px;
 ayuServiceTimeBadgeTrailingInset: 3px;
 ayuServiceTimeBadgeLastLineWidthAdd: 9px;
+
+vygramSettingsMaxWidth: 680px;
+
+vygramFileCardMaxWidth: 420px;
+vygramFileCardRadius: 4px;
+vygramFileCardGrow: 2px;
+vygramFileCardActionSize: 44px;
+vygramFileCardRadialSize: 22px;
+vygramFileCardRadialLine: 2px;
+vygramFileCardCancelSize: 7px;
+vygramFileStatusFont: font("JetBrains Mono" 11px);
+
+vygramReactionRadius: 4px;
+vygramReactionCountFont: font("JetBrains Mono" 12px);

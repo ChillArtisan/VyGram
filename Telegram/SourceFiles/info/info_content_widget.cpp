@@ -39,6 +39,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_info.h"
 #include "styles/style_profile.h"
 
+// AyuGram includes
+#include "window/themes/window_theme.h"
+#include "styles/style_ayu_styles.h"
+
+
 namespace Info {
 namespace {
 
@@ -127,6 +132,7 @@ void ContentWidget::updateControlsGeometry() {
 	if (!_innerWrap) {
 		return;
 	}
+	updateInnerPadding();
 	_innerWrap->resizeToWidth(width());
 
 	auto scrollGeometry = rect().marginsRemoved(
@@ -295,7 +301,13 @@ void ContentWidget::applyAdditionalScroll(int additionalScroll) {
 
 void ContentWidget::updateInnerPadding() {
 	const auto addedToBottom = std::max(_additionalScroll, _addedHeight);
-	_innerWrap->setPadding({ 0, _innerTopReserve, 0, addedToBottom });
+	const auto side = (Window::Theme::IsTerminalTheme()
+		&& _controller->wrap() == Wrap::Narrow
+		&& _controller->section().type() == Section::Type::Settings
+		&& !dynamic_cast<FlexibleFiller*>(_innerWrap->entity()))
+		? std::max((width() - st::vygramSettingsMaxWidth) / 2, 0)
+		: 0;
+	_innerWrap->setPadding({ side, _innerTopReserve, side, addedToBottom });
 }
 
 void ContentWidget::setInnerTopReserve(int reserve) {

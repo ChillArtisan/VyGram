@@ -60,10 +60,49 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // AyuGram includes
 #include "ayu/ayu_settings.h"
 #include "ayu/ui/graphite_surface.h"
+#include "styles/style_ayu_icons.h"
 
 
 namespace Window {
 namespace {
+
+[[nodiscard]] const style::icon &GraphiteFolderIcon(Ui::FilterIcon icon) {
+	using Icon = Ui::FilterIcon;
+	switch (icon) {
+	case Icon::Cat: return st::vygramFolderCat;
+	case Icon::Book: return st::vygramFolderBook;
+	case Icon::Money: return st::vygramFolderMoney;
+	case Icon::Game: return st::vygramFolderGame;
+	case Icon::Light: return st::vygramFolderLight;
+	case Icon::Like: return st::vygramFolderLike;
+	case Icon::Note: return st::vygramFolderNote;
+	case Icon::Palette: return st::vygramFolderPalette;
+	case Icon::Travel: return st::vygramFolderTravel;
+	case Icon::Sport: return st::vygramFolderSport;
+	case Icon::Favorite: return st::vygramFolderFavorite;
+	case Icon::Study: return st::vygramFolderStudy;
+	case Icon::Airplane: return st::vygramFolderAirplane;
+	case Icon::Private: return st::vygramFolderPrivate;
+	case Icon::Groups: return st::vygramFolderGroups;
+	case Icon::All: return st::vygramFolderAll;
+	case Icon::Unread: return st::vygramFolderUnread;
+	case Icon::Bots: return st::vygramFolderBots;
+	case Icon::Crown: return st::vygramFolderCrown;
+	case Icon::Flower: return st::vygramFolderFlower;
+	case Icon::Home: return st::vygramFolderHome;
+	case Icon::Love: return st::vygramFolderLove;
+	case Icon::Mask: return st::vygramFolderMask;
+	case Icon::Party: return st::vygramFolderParty;
+	case Icon::Trade: return st::vygramFolderTrade;
+	case Icon::Work: return st::vygramFolderWork;
+	case Icon::Unmuted: return st::vygramFolderUnmuted;
+	case Icon::Channels: return st::vygramFolderChannels;
+	case Icon::Custom: return st::vygramFolderCustom;
+	case Icon::Setup:
+	case Icon::Edit: return st::vygramFolderSetup;
+	}
+	return st::vygramFolderCustom;
+}
 
 void PaintRailButton(
 		not_null<Ui::AbstractButton*> button,
@@ -853,7 +892,9 @@ base::unique_qptr<Ui::SideBarButton> FiltersMenu::prepareButton(
 		badge = std::make_shared<QString>();
 		raw->setAttribute(Qt::WA_OpaquePaintEvent, false);
 		raw->setToolTip(nameText);
-		const auto glyph = locked ? &st::menuIconLock : icons.normal.get();
+		const auto glyph = locked
+			? &st::menuIconLock
+			: &GraphiteFolderIcon(id ? icon : Ui::FilterIcon::All);
 		base::install_event_filter(raw, [=](not_null<QEvent*> event) {
 			if (event->type() != QEvent::Paint) {
 				return base::EventFilterResult::Continue;
