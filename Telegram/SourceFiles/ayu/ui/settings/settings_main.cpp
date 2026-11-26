@@ -16,6 +16,7 @@
 #include "ayu/ui/settings/settings_filters.h"
 #include "ayu/ui/settings/settings_general.h"
 #include "ayu/ui/settings/settings_other.h"
+#include "ayu/vygram_version.h"
 #include "core/version.h"
 #include "settings/settings_builder.h"
 #include "settings/settings_common.h"
@@ -70,7 +71,10 @@ void BuildVersionInfo(SectionBuilder &builder) {
 				ctx.container,
 				rpl::single(
 					QString("VyGram Desktop v")
-					+ QString::fromLatin1(AppVersionStr)),
+					+ QString::fromLatin1(VyGram::kVersion)
+					+ QString(" (Telegram ")
+					+ QString::fromLatin1(AppVersionStr)
+					+ QString(")")),
 				st::boxTitle),
 			.align = style::al_top,
 		};

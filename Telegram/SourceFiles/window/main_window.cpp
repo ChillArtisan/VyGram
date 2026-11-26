@@ -65,6 +65,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ui/ayu_logo.h"
+#include "ayu/ayu_settings.h"
+#include "ayu/vygram_version.h"
+#include "ui/widgets/buttons.h"
+#include "styles/style_ayu_icons.h"
 
 
 namespace Window {
@@ -727,32 +731,95 @@ void MainWindow::setupBuildTitleLabel() {
 	struct ConnectionLabel {
 		QString text;
 		QColor color;
+		bool accent = false;
 	};
 	const auto status = label->lifetime().make_state<ConnectionLabel>();
+	const auto px = [](int v) { return style::ConvertScale(v); };
+	const auto monoFont = [=] {
+		auto result = QFont(u"JetBrains Mono"_q);
+		result.setPixelSize(px(12));
+		return result;
+	};
+	const auto statusLeft = [=](int width) {
+		return width
+			- px(18)
+			- QFontMetrics(monoFont()).horizontalAdvance(status->text);
+	};
+
+	const auto ghost = Ui::CreateChild<Ui::IconButton>(
+		title,
+		st::vygramTitleGhost);
+	ghost->setAccessibleName(tr::ayu_GhostModeToggle(tr::now));
+	ghost->setToolTip(tr::ayu_GhostModeToggle(tr::now));
+	ghost->hide();
+	const auto ghostActive = label->lifetime().make_state<rpl::variable<bool>>(
+		_controller->sessionControllerValue(
+		) | rpl::map([](SessionController *session) -> rpl::producer<bool> {
+			if (!session) {
+				return rpl::single(false);
+			}
+			const auto raw = &session->session();
+			return AyuSettings::getInstance().useGlobalGhostModeValue(
+			) | rpl::map([=](bool) {
+				return AyuSettings::ghost(raw).ghostModeActiveValue();
+			}) | rpl::flatten_latest();
+		}) | rpl::flatten_latest());
+	ghost->setClickedCallback([=] {
+		const auto session = _controller->sessionController();
+		if (!session || _controller->locked()) {
+			return;
+		}
+		auto &settings = AyuSettings::ghost(&session->session());
+		settings.setGhostModeEnabled(!settings.isGhostModeActive());
+	});
+	const auto placeGhost = [=] {
+		if (status->text.isEmpty()) {
+			ghost->hide();
+			return;
+		}
+		const auto left = statusLeft(label->width())
+			- px(15)
+			- st::vygramTitleGhostSkip
+			- ghost->width();
+		ghost->moveToLeft(
+			label->x() + left,
+			label->y() + (label->height() - ghost->height()) / 2);
+		ghost->show();
+		ghost->raise();
+	};
+	label->geometryValue(
+	) | rpl::on_next(placeGhost, ghost->lifetime());
+
 	rpl::combine(
 		_controller->sessionControllerValue(),
 		Core::App().settings().proxy().connectionTypeValue(),
+		ghostActive->value(),
 		tr::ayu_GraphiteOnline(),
 		tr::ayu_GraphiteConnecting(),
-		tr::ayu_GraphiteOffline()
+		tr::ayu_GraphiteOffline(),
+		tr::ayu_GhostModeToggle()
 	) | rpl::on_next([=](SessionController *session, const auto &,
-			const QString &online, const QString &connecting, const QString &offline) {
+			bool ghostMode, const QString &online, const QString &connecting,
+			const QString &offline, const QString &ghostText) {
 		const auto state = session ? session->session().mtp().dcstate() : MTP::DisconnectedState;
 		*status = !session ? ConnectionLabel()
+			: (state == MTP::ConnectedState && ghostMode) ? ConnectionLabel{ ghostText.toUpper(), QColor(), true }
 			: (state == MTP::ConnectedState) ? ConnectionLabel{ online.toUpper(), QColor(131, 166, 139) }
 			: (state == MTP::ConnectingState) ? ConnectionLabel{ connecting.toUpper(), QColor(228, 177, 110) }
 			: ConnectionLabel{ offline.toUpper(), QColor(133, 129, 123) };
+		const auto icon = ghostMode ? &st::vygramTitleGhostActive : nullptr;
+		ghost->setIconOverride(icon, icon);
+		placeGhost();
 		label->update();
 	}, label->lifetime());
 
-	const auto version = u"v%1   [%2]"_q.arg(QString::fromLatin1(AppVersionStr),
+	const auto version = u"v%1   [%2]"_q.arg(QString::fromLatin1(VyGram::kVersion),
 		QString::fromLatin1(Core::Updates::ChannelName(Core::BuildUpdateChannel)))
 		+ Core::CanaryVersionSuffix();
 	label->paintRequest() | rpl::on_next([=] {
 		auto p = QPainter(label);
 		const auto bounds = label->rect();
 		const auto mid = bounds.height() / 2;
-		const auto px = [](int v) { return style::ConvertScale(v); };
 		static const auto texture = QPixmap(u":/gui/graphite/title.jpg"_q);
 		p.fillRect(bounds, st::titleBgActive->c);
 		if (!texture.isNull()) {
@@ -771,8 +838,7 @@ void MainWindow::setupBuildTitleLabel() {
 		x += QFontMetrics(brand).horizontalAdvance(text) + px(18);
 		p.setPen(st::shadowFg->c);
 		p.drawLine(x, mid - px(8), x, mid + px(8));
-		auto mono = QFont(u"JetBrains Mono"_q);
-		mono.setPixelSize(px(12));
+		const auto mono = monoFont();
 		p.setFont(mono);
 		p.setPen(st::titleFgActive->c);
 		x += px(18);
@@ -781,14 +847,20 @@ void MainWindow::setupBuildTitleLabel() {
 			p.drawText(QRect(x, 0, versionWidth + px(2), bounds.height()), Qt::AlignVCenter, version);
 		}
 		const auto textWidth = QFontMetrics(mono).horizontalAdvance(status->text);
-		const auto statusLeft = bounds.width() - px(18) - textWidth;
-		if (!status->text.isEmpty() && statusLeft > x + versionWidth + px(32)) {
-			p.drawText(QRect(statusLeft, 0, textWidth + px(2), bounds.height()),
+		const auto left = statusLeft(bounds.width());
+		const auto ghostSpace = ghost->width() + st::vygramTitleGhostSkip;
+		if (!status->text.isEmpty()
+			&& left - ghostSpace > x + versionWidth + px(32)) {
+			const auto color = status->accent
+				? st::windowActiveTextFg->c
+				: status->color;
+			p.setPen(status->accent ? color : st::titleFgActive->c);
+			p.drawText(QRect(left, 0, textWidth + px(2), bounds.height()),
 				Qt::AlignVCenter, status->text);
 			p.setRenderHint(QPainter::Antialiasing);
 			p.setPen(Qt::NoPen);
-			p.setBrush(status->color);
-			p.drawEllipse(QPoint(statusLeft - px(12), mid), px(3), px(3));
+			p.setBrush(color);
+			p.drawEllipse(QPoint(left - px(12), mid), px(3), px(3));
 		}
 	}, label->lifetime());
 

@@ -81,6 +81,16 @@ ayuHistoryFileOutPluginSelected: icon {{ "ayu/history_file_plugin", historyFileO
 
 menuIconClearAttention: icon {{ "menu/clear", menuIconAttentionColor }};
 
+vygramTitleGhost: IconButton {
+	width: 32px;
+	height: 36px;
+	icon: icon {{ "ayu/ghost", titleButtonFg }};
+	iconOver: icon {{ "ayu/ghost", titleButtonFgOver }};
+	iconPosition: point(-1px, -1px);
+}
+vygramTitleGhostActive: icon {{ "ayu/ghost", windowActiveTextFg }};
+vygramTitleGhostSkip: 6px;
+
 vygramFileCardIcon: icon {{ "menu/file", menuIconColor }};
 vygramFileCardImage: icon {{ "menu/image", menuIconColor }};
 vygramFileCardDownload: icon {{ "menu/download", menuIconColor }};
