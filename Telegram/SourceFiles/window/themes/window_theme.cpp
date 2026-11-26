@@ -1341,10 +1341,10 @@ void PrepareFreshProfile() {
 void InitializeFreshProfile() {
 	const auto freshProfile = base::take(FreshProfile);
 	Saved saved;
-	saved.object.pathAbsolute = TerminalThemePath();
-	saved.object.pathRelative = TerminalThemePath();
+	saved.object.pathAbsolute = ColdSteelThemePath();
+	saved.object.pathRelative = ColdSteelThemePath();
 	Instance instance;
-	if (!LoadFromFile(TerminalThemePath(), &instance, &saved.cache, &saved.object.content)) {
+	if (!LoadFromFile(ColdSteelThemePath(), &instance, &saved.cache, &saved.object.content)) {
 		LOG(("Theme: Could not initialize the bundled Terminal theme."));
 		return;
 	}
@@ -1365,7 +1365,7 @@ void CommitFreshProfileTheme() {
 		return;
 	}
 	constexpr auto key = "terminal.design.version";
-	const auto version = QByteArray("4");
+	const auto version = QByteArray("5");
 	const auto savedVersion = AyuDatabase::loadPrivateSetting(key);
 	if (savedVersion == version) {
 		FreshProfileTheme = std::nullopt;
@@ -1384,7 +1384,7 @@ void CommitFreshProfileTheme() {
 	// background have loaded. Later manual theme choices must be preserved.
 	Core::App().settings().setSystemDarkModeEnabled(false);
 	Core::App().settings().setSystemAccentColorEnabled(false);
-	const auto preset = IsColdSteelTheme() ? ColdSteelThemePath() : TerminalThemePath();
+	const auto preset = ColdSteelThemePath();
 	if (IsNightMode()) {
 		if (!Apply(preset)) {
 			return;

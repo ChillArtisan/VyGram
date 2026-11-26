@@ -17,7 +17,11 @@ Later manual theme choices are preserved by an encrypted migration marker.
 The preset can also be reapplied from **AyuGram Settings → Appearance → Terminal
 → Apply Terminal design**.
 
-Every cold-start password screen uses a public bundled Terminal palette in
+Cold Steel (cool blue-grey) is the default Terminal palette; Graphite (warm
+charcoal with amber) stays available in the same settings section. Design
+migration v5 moves profiles still on Graphite to Cold Steel once.
+
+Every cold-start password screen uses the public bundled Cold Steel palette in
 memory, without reading private saved theme settings. After successful unlock,
 protected settings and the saved background load before the one-time Terminal
 setup. Theme/background writes are synchronized before the migration marker
