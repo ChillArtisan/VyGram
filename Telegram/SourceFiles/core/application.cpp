@@ -121,6 +121,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/data/ayu_database.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/features/streamer_mode/streamer_mode.h"
+#include "ayu/features/account_appearance/account_appearance.h"
 
 
 namespace Core {
@@ -581,6 +582,7 @@ void Application::startSettingsAndBackground() {
 	Local::rewriteSettingsIfNeeded();
 	Window::Theme::Background()->start();
 	Window::Theme::CommitFreshProfileTheme();
+	Ayu::AccountAppearance::BackgroundReady();
 	checkSystemDarkMode();
 	Ui::SetScreenReaderModeDisabled(
 		settings().readPref<bool>(kScreenReaderModeDisabledKey));

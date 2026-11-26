@@ -879,7 +879,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_theme_night" = "Night";
 "lng_settings_theme_terminal" = "Terminal";
 "lng_settings_theme_terminal_apply" = "Apply Terminal design";
-"lng_settings_theme_terminal_description" = "Graphite pairs warm charcoal with amber. Cold Steel uses cool blue-grey tones.";
+"lng_settings_theme_terminal_description" = "Graphite pairs warm charcoal with amber. Cold Steel uses cool blue-grey tones. Glass keeps your chat wallpaper and shows it through frosted navigation and chat list panels.";
 "lng_settings_theme_accent_title" = "Choose accent color";
 "lng_settings_theme_system_accent_color" = "System accent color";
 "lng_settings_data_storage" = "Data and storage";
@@ -9334,3 +9334,18 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_vygram_shortcut_chat_info" = "Chat info panel";
 "lng_vygram_command_query" = "Find a command or chat";
 "lng_vygram_command_global_search" = "Search all messages";
+"lng_vygram_account_appearance" = "Account appearance";
+"lng_vygram_account_own_look" = "Separate appearance for this account";
+"lng_vygram_account_own_look_about" = "The theme, night mode, chat wallpaper and Graphite settings are remembered for this account and restored when you switch to it. Applies to the main window; accounts opened in separate windows use the main window's look.";
+"lng_vygram_account_wallpapers" = "Show chat wallpapers";
+"lng_vygram_account_wallpapers_about" = "When off, chats of this account use a plain background. Nothing is changed on the server.";
+"lng_vygram_account_theme" = "Theme and colors";
+"lng_vygram_account_accent" = "Account color";
+"lng_vygram_account_accent_about" = "The color marks this account in the side navigation, so you always see which account you are writing from.";
+"lng_vygram_account_next" = "Next account";
+"lng_vygram_account_previous" = "Previous account";
+"lng_vygram_account_switch_to" = "Switch to {name}";
+"lng_vygram_chat_wallpaper_hide" = "Hide wallpaper in this chat";
+"lng_vygram_chat_wallpaper_show" = "Show wallpaper in this chat";
+"ayu_GraphiteGlass" = "Glass";
+"ayu_GraphiteApplyGlass" = "Apply Glass";

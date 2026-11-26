@@ -647,7 +647,8 @@ void ChatBackground::checkUploadWallPaper() {
 	}
 	if (!Data::IsCustomWallPaper(_paper)
 		|| _original.isNull()
-		|| _editingTheme.has_value()) {
+		|| _editingTheme.has_value()
+		|| _localOnlyPaper) {
 		return;
 	}
 
@@ -696,6 +697,7 @@ QImage ChatBackground::postprocessBackgroundImage(QImage image) {
 }
 
 void ChatBackground::set(const Data::WallPaper &paper, QImage image) {
+	_localOnlyPaper = base::take(_applyingLook);
 	image = Ui::PreprocessBackgroundImage(std::move(image));
 
 	const auto needResetAdjustable = Data::IsDefaultWallPaper(paper)
@@ -1202,6 +1204,68 @@ void ChatBackground::downloadingStarted(bool tile) {
 	_updates.fire({ BackgroundUpdate::Type::Start, tile });
 }
 
+std::optional<LookSnapshot> ChatBackground::captureLook() {
+	if (!started() || _editingTheme) {
+		return std::nullopt;
+	} else if (AreTestingTheme()) {
+		Revert();
+	}
+	auto result = LookSnapshot();
+	result.nightMode = _nightMode;
+	auto saved = Local::readThemeAfterSwitch();
+	result.theme = (saved.object.pathAbsolute == _themeObject.pathAbsolute)
+		? std::move(saved.object)
+		: _themeObject;
+	result.paper = _paper;
+	result.tile = tile();
+	if (!Data::IsThemeWallPaper(_paper) && !Data::IsDefaultWallPaper(_paper)) {
+		result.image = _original;
+	}
+	return result;
+}
+
+bool ChatBackground::applyLook(const LookSnapshot &look) {
+	if (!started() || _editingTheme || AreTestingTheme()) {
+		return false;
+	}
+	const auto &object = look.theme;
+	auto preview = std::unique_ptr<Preview>();
+	if (!object.pathAbsolute.isEmpty()) {
+		const auto byPath = IsEmbeddedTheme(object.pathAbsolute)
+			|| QFileInfo::exists(object.pathAbsolute);
+		if (!byPath && object.content.isEmpty()) {
+			return false;
+		}
+		preview = PreviewFromFile(
+			byPath ? QByteArray() : object.content,
+			object.pathAbsolute,
+			object.cloud);
+		if (!preview) {
+			return false;
+		}
+	}
+	const auto night = (look.nightMode == _nightMode
+		|| nightModeChangeAllowed())
+		? look.nightMode
+		: _nightMode;
+	const auto nightChanged = (night != _nightMode);
+	_nightMode = night;
+	if (preview) {
+		Apply(std::move(preview));
+	} else {
+		ApplyDefaultWithPath(QString());
+	}
+	KeepApplied();
+	_applyingLook = true;
+	set(look.paper, look.image);
+	setTile(look.tile);
+	writeNewBackgroundSettings();
+	if (nightChanged) {
+		Local::writeSettings();
+	}
+	return true;
+}
+
 void ChatBackground::setNightModeValue(bool nightMode) {
 	_nightMode = nightMode;
 }
@@ -1546,6 +1610,10 @@ QString ColdSteelThemePath() {
 	return u":/gui/cold-steel.tdesktop-theme"_q;
 }
 
+QString GlassThemePath() {
+	return u":/gui/glass.tdesktop-theme"_q;
+}
+
 bool IsColdSteelTheme() {
 	const auto &object = AreTestingTheme()
 		? GlobalApplying.data.object
@@ -1553,12 +1621,20 @@ bool IsColdSteelTheme() {
 	return object.pathAbsolute == ColdSteelThemePath();
 }
 
+bool IsGlassTheme() {
+	const auto &object = AreTestingTheme()
+		? GlobalApplying.data.object
+		: Background()->themeObject();
+	return object.pathAbsolute == GlassThemePath();
+}
+
 bool IsTerminalTheme() {
 	const auto &object = AreTestingTheme()
 		? GlobalApplying.data.object
 		: Background()->themeObject();
 	return object.pathAbsolute == TerminalThemePath()
-		|| object.pathAbsolute == ColdSteelThemePath();
+		|| object.pathAbsolute == ColdSteelThemePath()
+		|| object.pathAbsolute == GlassThemePath();
 }
 
 bool IsNonDefaultBackground() {

@@ -99,6 +99,8 @@ QString NightThemePath();
 [[nodiscard]] QString TerminalThemePath();
 [[nodiscard]] QString ColdSteelThemePath();
 [[nodiscard]] bool IsColdSteelTheme();
+[[nodiscard]] QString GlassThemePath();
+[[nodiscard]] bool IsGlassTheme();
 [[nodiscard]] bool IsTerminalTheme();
 [[nodiscard]] bool IsNightMode();
 void SetNightModeValue(bool nightMode);
@@ -162,6 +164,14 @@ enum class ClearEditing {
 	KeepChanges,
 };
 
+struct LookSnapshot {
+	Object theme;
+	bool nightMode = false;
+	Data::WallPaper paper = Data::DefaultWallPaper();
+	QImage image;
+	bool tile = false;
+};
+
 class ChatBackground final {
 public:
 	ChatBackground();
@@ -195,6 +205,9 @@ public:
 
 	void appliedEditedPalette();
 	void downloadingStarted(bool tile);
+
+	[[nodiscard]] std::optional<LookSnapshot> captureLook();
+	bool applyLook(const LookSnapshot &look);
 
 	[[nodiscard]] const Data::WallPaper &paper() const {
 		return _paper;
@@ -285,6 +298,8 @@ private:
 	std::optional<bool> _localStoredTileNightValue;
 
 	std::optional<QColor> _imageMonoColor;
+	bool _applyingLook = false;
+	bool _localOnlyPaper = false;
 
 	Object _themeObject;
 	QImage _themeImage;

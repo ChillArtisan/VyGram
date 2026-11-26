@@ -111,5 +111,46 @@ class TerminalThemeTests(unittest.TestCase):
         self.assertEqual(files["fonts/JetBrainsMono-Regular.ttf"].read_bytes()[:4], b"\x00\x01\x00\x00")
 
 
+GLASS = RESOURCES / "glass.tdesktop-theme"
+
+
+def glass_colors():
+    with zipfile.ZipFile(GLASS) as archive:
+        text = archive.read("colors.tdesktop-palette").decode("utf-8-sig")
+    return dict(COLOR.findall(text))
+
+
+class GlassThemeTests(unittest.TestCase):
+    def test_palette_is_complete_and_keeps_terminal_roles(self):
+        self.assertEqual(set(glass_colors()), set(colors(PALETTE)))
+
+    def test_text_stays_readable_on_glass_surfaces(self):
+        palette = glass_colors()
+        for foreground, background in (
+            ("windowFg", "windowBg"), ("windowSubTextFg", "windowBg"),
+            ("dialogsNameFg", "dialogsBg"), ("dialogsNameFgActive", "dialogsBgActive"),
+            ("historyTextInFg", "msgInBg"), ("historyTextOutFg", "msgOutBg"),
+            ("msgInDateFg", "msgInBg"), ("activeButtonFg", "activeButtonBg"),
+        ):
+            with self.subTest(foreground=foreground, background=background):
+                a, b = sorted((luminance(palette[foreground]), luminance(palette[background])))
+                self.assertGreaterEqual((b + 0.05) / (a + 0.05), 4.5)
+
+    def test_bubbles_are_translucent_and_accent_is_gold(self):
+        palette = glass_colors()
+        for key in ("msgInBg", "msgOutBg", "msgServiceBg"):
+            with self.subTest(key=key):
+                self.assertEqual(len(palette[key]), 9)
+                self.assertLess(int(palette[key][7:], 16), 0xe0)
+        self.assertEqual(palette["windowBgActive"], "#e6b53d")
+        self.assertEqual(palette["dialogsOnlineBadgeFg"], "#3fae86")
+
+    def test_glass_theme_is_bundled(self):
+        qrc = RESOURCES / "qrc/telegram/telegram.qrc"
+        files = {entry.attrib.get("alias"): (qrc.parent / entry.text).resolve()
+                 for entry in ET.parse(qrc).iter("file")}
+        self.assertEqual(files["glass.tdesktop-theme"], GLASS.resolve())
+
+
 if __name__ == "__main__":
     unittest.main()

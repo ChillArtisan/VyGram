@@ -20,9 +20,12 @@
 #include "window/themes/window_theme_preview.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/ayu_ui_settings.h"
+#include "ayu/features/account_appearance/account_appearance.h"
+#include "ayu/ui/boxes/account_switcher.h"
 #include "ayu/ui/boxes/font_selector.h"
 #include "ayu/ui/components/avatar_corners_preview.h"
 #include "ayu/ui/components/icon_picker.h"
+#include "ayu/ui/glass_surface.h"
 #include "ayu/ui/settings/ayu_builder.h"
 #include "ayu/ui/settings/settings_ayu_utils.h"
 #include "ayu/ui/settings/settings_main.h"
@@ -247,28 +250,54 @@ void BuildAppearance(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	ayu.addSectionDivider();
 }
 
+enum class Preset {
+	Graphite,
+	ColdSteel,
+	Glass,
+};
+
+[[nodiscard]] Preset CurrentPreset() {
+	return Window::Theme::IsGlassTheme()
+		? Preset::Glass
+		: Window::Theme::IsColdSteelTheme()
+		? Preset::ColdSteel
+		: Preset::Graphite;
+}
+
+[[nodiscard]] QString PresetPath(Preset preset) {
+	switch (preset) {
+	case Preset::ColdSteel: return Window::Theme::ColdSteelThemePath();
+	case Preset::Glass: return Window::Theme::GlassThemePath();
+	case Preset::Graphite: break;
+	}
+	return Window::Theme::TerminalThemePath();
+}
+
+[[nodiscard]] QString PresetName(Preset preset) {
+	switch (preset) {
+	case Preset::ColdSteel: return u"cold-steel"_q;
+	case Preset::Glass: return u"glass"_q;
+	case Preset::Graphite: break;
+	}
+	return u"graphite"_q;
+}
+
+[[nodiscard]] std::optional<Preset> PresetFromName(const QString &name) {
+	for (const auto preset : { Preset::Graphite, Preset::ColdSteel, Preset::Glass }) {
+		if (PresetName(preset) == name) {
+			return preset;
+		}
+	}
+	return std::nullopt;
+}
+
 void ExportGraphiteAppearance(not_null<Window::SessionController*> controller) {
-	const auto &settings = AyuSettings::getInstance();
-	const auto options = QJsonObject{
-		{ u"version"_q, 1 },
-		{ u"preset"_q, Window::Theme::IsColdSteelTheme() ? u"cold-steel"_q
-			: Window::Theme::IsTerminalTheme() ? u"graphite"_q : u"custom"_q },
-		{ u"graphiteThemeActive"_q, Window::Theme::IsTerminalTheme() },
-		{ u"graphiteNavLabels"_q, settings.graphiteNavLabels() },
-		{ u"graphiteCompactNav"_q, settings.graphiteCompactNav() },
-		{ u"graphiteForumMessages"_q, settings.graphiteForumMessages() },
-		{ u"graphiteMessageIds"_q, settings.graphiteMessageIds() },
-		{ u"graphiteGrainOpacity"_q, settings.graphiteGrainOpacity() },
-		{ u"graphiteChatSurface"_q, settings.graphiteChatSurface() },
-		{ u"graphiteNavSurface"_q, settings.graphiteNavSurface() },
-		{ u"graphiteListSurface"_q, settings.graphiteListSurface() },
-		{ u"graphiteAvatarSize"_q, settings.graphiteAvatarSize() },
-		{ u"graphiteMessageSize"_q, settings.graphiteMessageSize() },
-		{ u"avatarCorners"_q, settings.avatarCorners() },
-		{ u"messageBubbleRadius"_q, settings.messageBubbleRadius() },
-		{ u"removeMessageTail"_q, settings.removeMessageTail() },
-		{ u"monoFont"_q, settings.monoFont() },
-	};
+	auto options = Ayu::AccountAppearance::CaptureOptions();
+	options.insert(u"version"_q, 1);
+	options.insert(u"preset"_q, Window::Theme::IsTerminalTheme()
+		? PresetName(CurrentPreset())
+		: u"custom"_q);
+	options.insert(u"graphiteThemeActive"_q, Window::Theme::IsTerminalTheme());
 	FileDialog::GetWritePath(
 		Core::App().getFileDialogParent(),
 		tr::ayu_GraphiteExportAppearance(tr::now),
@@ -290,8 +319,21 @@ void ExportGraphiteAppearance(not_null<Window::SessionController*> controller) {
 		}));
 }
 
-bool ApplyEmbeddedPreset(bool coldSteel) {
-	const auto path = coldSteel ? Window::Theme::ColdSteelThemePath() : Window::Theme::TerminalThemePath();
+bool ApplyEmbeddedPreset(Preset preset) {
+	const auto path = PresetPath(preset);
+	if (preset == Preset::Glass) {
+		const auto background = Window::Theme::Background();
+		auto look = background->captureLook();
+		if (!look) {
+			return false;
+		}
+		look->theme = Window::Theme::Object{
+			.pathRelative = path,
+			.pathAbsolute = path,
+		};
+		look->nightMode = true;
+		return background->applyLook(*look) && Window::Theme::IsGlassTheme();
+	}
 	if (Window::Theme::IsNightMode()) {
 		if (!Window::Theme::Apply(path)) {
 			return false;
@@ -299,7 +341,7 @@ bool ApplyEmbeddedPreset(bool coldSteel) {
 	} else {
 		Window::Theme::ToggleNightMode(path);
 	}
-	if (!Window::Theme::IsTerminalTheme() || Window::Theme::IsColdSteelTheme() != coldSteel) {
+	if (!Window::Theme::IsTerminalTheme() || CurrentPreset() != preset) {
 		return false;
 	}
 	Window::Theme::KeepApplied();
@@ -308,71 +350,25 @@ bool ApplyEmbeddedPreset(bool coldSteel) {
 
 bool ImportAppearance(const QByteArray &bytes) {
 	const auto data = QJsonDocument::fromJson(bytes).object();
-	if (data.value(u"version"_q).toInt(-1) != 1) {
+	if (data.value(u"version"_q).toInt(-1) != 1
+		|| !Ayu::AccountAppearance::ValidateOptions(data)) {
 		return false;
 	}
-	auto &settings = AyuSettings::getInstance();
-	struct Flag { QString key; void (AyuSettings::*set)(bool); };
-	const auto flags = std::array{
-		Flag{ u"graphiteNavLabels"_q, &AyuSettings::setGraphiteNavLabels },
-		Flag{ u"graphiteCompactNav"_q, &AyuSettings::setGraphiteCompactNav },
-		Flag{ u"graphiteForumMessages"_q, &AyuSettings::setGraphiteForumMessages },
-		Flag{ u"graphiteMessageIds"_q, &AyuSettings::setGraphiteMessageIds },
-		Flag{ u"removeMessageTail"_q, &AyuSettings::setRemoveMessageTail },
-	};
-	struct Range { QString key; int min, max; void (AyuSettings::*set)(int); };
-	const auto ranges = std::array{
-		Range{ u"avatarCorners"_q, 0, AyuUiSettings::kMaxAvatarCorners, &AyuSettings::setAvatarCorners },
-		Range{ u"messageBubbleRadius"_q, 0, 16, &AyuSettings::setMessageBubbleRadius },
-		Range{ u"graphiteGrainOpacity"_q, 0, 10, &AyuSettings::setGraphiteGrainOpacity },
-		Range{ u"graphiteChatSurface"_q, 0, 4, &AyuSettings::setGraphiteChatSurface },
-		Range{ u"graphiteNavSurface"_q, 0, 4, &AyuSettings::setGraphiteNavSurface },
-		Range{ u"graphiteListSurface"_q, 0, 4, &AyuSettings::setGraphiteListSurface },
-		Range{ u"graphiteAvatarSize"_q, 32, 56, &AyuSettings::setGraphiteAvatarSize },
-		Range{ u"graphiteMessageSize"_q, 12, 20, &AyuSettings::setGraphiteMessageSize },
-	};
-	for (const auto &flag : flags) {
-		if (!data.value(flag.key).isBool()) {
-			return false;
-		}
-	}
-	for (const auto &range : ranges) {
-		// Earlier v1 profiles lacked the optional Graphite appearance controls.
-		if (!data.contains(range.key) && range.key.startsWith(u"graphite"_q)) {
-			continue;
-		}
-		const auto value = data.value(range.key).toInt(-1);
-		if (value < range.min || value > range.max) {
-			return false;
-		}
-	}
-	const auto font = data.value(u"monoFont"_q);
-	if (!font.isString() || font.toString().size() > 128) {
+	const auto name = data.value(u"preset"_q);
+	if (!name.isUndefined() && (!name.isString()
+		|| (!PresetFromName(name.toString()) && name != u"custom"_q))) {
 		return false;
 	}
-	const auto preset = data.value(u"preset"_q);
-	if (!preset.isUndefined() && (!preset.isString()
-		|| (preset != u"graphite"_q && preset != u"cold-steel"_q && preset != u"custom"_q))) {
+	auto preset = PresetFromName(name.toString());
+	if (name.isUndefined() && data.value(u"graphiteThemeActive"_q).toBool()) {
+		preset = Preset::Graphite;
+	}
+	if (preset
+		&& (!Window::Theme::IsTerminalTheme() || CurrentPreset() != *preset)
+		&& !ApplyEmbeddedPreset(*preset)) {
 		return false;
 	}
-	const auto cold = (preset == u"cold-steel"_q);
-	const auto graphite = (preset == u"graphite"_q)
-		|| (preset.isUndefined() && data.value(u"graphiteThemeActive"_q).toBool());
-	if ((cold || graphite)
-		&& (!Window::Theme::IsTerminalTheme() || Window::Theme::IsColdSteelTheme() != cold)
-		&& !ApplyEmbeddedPreset(cold)) {
-		return false;
-	}
-	for (const auto &flag : flags) {
-		(settings.*flag.set)(data.value(flag.key).toBool());
-	}
-	for (const auto &range : ranges) {
-		if (data.contains(range.key)) {
-			(settings.*range.set)(data.value(range.key).toInt());
-		}
-	}
-	settings.setMonoFont(font.toString());
-	Ui::SetAppliedBubbleRadius(settings.messageBubbleRadius());
+	Ayu::AccountAppearance::ApplyOptions(data);
 	return true;
 }
 
@@ -403,8 +399,9 @@ void ImportGraphiteAppearance(not_null<Window::SessionController*> controller) {
 void GraphitePreview(not_null<Ui::GenericBox*> box) {
 	box->setTitle(tr::ayu_GraphitePreview());
 	box->setWidth(st::boxWideWidth);
-	const auto preview = Window::Theme::GeneratePreview({}, Window::Theme::IsColdSteelTheme()
-		? Window::Theme::ColdSteelThemePath() : Window::Theme::TerminalThemePath());
+	const auto preview = Window::Theme::GeneratePreview(
+		{},
+		PresetPath(CurrentPreset()));
 	if (!preview.isNull()) {
 		const auto picture = box->addRow(object_ptr<Ui::RpWidget>(box));
 		picture->widthValue() | rpl::on_next([=](int width) {
@@ -433,6 +430,7 @@ void AddSurfaceChoice(
 		tr::ayu_GraphiteTopo(tr::now),
 		tr::ayu_GraphiteNocturnal(tr::now),
 		tr::ayu_GraphiteGrid(tr::now),
+		tr::ayu_GraphiteGlass(tr::now),
 	};
 	const auto controller = builder.controller();
 	const auto caption = rpl::duplicate(title) | rpl::take(1);
@@ -457,18 +455,27 @@ void AddSurfaceChoice(
 void BuildTerminalDesign(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	const auto controller = builder.controller();
 	builder.addSubsectionTitle(tr::lng_settings_theme_terminal());
-	const auto choosePreset = [=](bool cold) {
+	const auto choosePreset = [=](Preset preset) {
 		const auto apply = crl::guard(controller, [=] {
-			if (!ApplyEmbeddedPreset(cold)) {
+			if (!ApplyEmbeddedPreset(preset)) {
 				return;
 			}
+			const auto glass = (preset == Preset::Glass);
+			const auto radius = glass ? 12 : 2;
 			auto &settings = AyuSettings::getInstance();
-			settings.setMessageBubbleRadius(2);
+			settings.setMessageBubbleRadius(radius);
 			settings.setRemoveMessageTail(true);
-			settings.setAvatarCorners(6);
+			if (!glass) {
+				settings.setAvatarCorners(6);
+			}
 			settings.setSingleCornerRadius(true);
 			settings.setMonoFont(u"JetBrains Mono"_q);
-			Ui::SetAppliedBubbleRadius(2);
+			if (glass) {
+				settings.setGraphiteNavSurface(Ui::kGlassSurface);
+				settings.setGraphiteListSurface(Ui::kGlassSurface);
+				settings.setGraphiteGrainOpacity(2);
+			}
+			Ui::SetAppliedBubbleRadius(radius);
 		});
 		if (Window::Theme::IsNightMode()) {
 			apply();
@@ -480,13 +487,19 @@ void BuildTerminalDesign(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 		.id = u"ayu/terminalDesign"_q,
 		.title = tr::lng_settings_theme_terminal_apply(),
 		.icon = { &st::menuIconPalette },
-		.onClick = [=] { choosePreset(false); },
+		.onClick = [=] { choosePreset(Preset::Graphite); },
 	});
 	builder.addButton({
 		.id = u"ayu/coldSteel"_q,
 		.title = tr::ayu_GraphiteApplyColdSteel(),
 		.icon = { &st::menuIconPalette },
-		.onClick = [=] { choosePreset(true); },
+		.onClick = [=] { choosePreset(Preset::ColdSteel); },
+	});
+	builder.addButton({
+		.id = u"ayu/glass"_q,
+		.title = tr::ayu_GraphiteApplyGlass(),
+		.icon = { &st::menuIconPalette },
+		.onClick = [=] { choosePreset(Preset::Glass); },
 	});
 	ayu.addSettingToggle({
 		.id = u"ayu/graphiteNavLabels"_q,
@@ -544,6 +557,12 @@ void BuildTerminalDesign(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 		.indexToValue = [](int i) { return i + 0; },
 		.onChanged = [](int value) { AyuSettings::getInstance().setGraphiteGrainOpacity(value); },
 		.formatLabel = [](int value) { return QString::number(value) + u"%"_q; },
+	});
+	builder.addButton({
+		.id = u"ayu/accountAppearance"_q,
+		.title = tr::lng_vygram_account_appearance(),
+		.st = &st::settingsButtonNoIcon,
+		.onClick = [=] { Ayu::ShowAccountAppearanceBox(controller); },
 	});
 	builder.addButton({
 		.id = u"ayu/graphiteWallpaper"_q,

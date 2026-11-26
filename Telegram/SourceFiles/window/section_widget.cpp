@@ -41,6 +41,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
+#include "ayu/features/account_appearance/account_appearance.h"
 #include "ayu/ui/graphite_surface.h"
 
 
@@ -571,11 +572,38 @@ auto ChatThemeValueFromPeer(
 	not_null<SessionController*> controller,
 	not_null<PeerData*> peer)
 -> rpl::producer<std::shared_ptr<Ui::ChatTheme>> {
+	using namespace Ayu::AccountAppearance;
+	auto wallpapersHidden = rpl::combine(
+		WallpapersHiddenValue(&peer->session()),
+		ChatWallpaperHiddenValue(peer)
+	) | rpl::map([](bool account, bool chat) {
+		return account || chat;
+	}) | rpl::map([](bool hidden) -> rpl::producer<bool> {
+		if (hidden) {
+			return DebouncedPaletteValue() | rpl::map_to(true);
+		}
+		return rpl::single(false);
+	}) | rpl::flatten_latest();
 	auto cloud = rpl::combine(
 		MaybeCloudThemeValueFromPeer(peer),
-		AyuSettings::getInstance().disableCustomBackgroundsValue()
-	) | rpl::map([=](ResolvedTheme resolved, bool disableCustomBackgrounds)
+		AyuSettings::getInstance().disableCustomBackgroundsValue(),
+		std::move(wallpapersHidden)
+	) | rpl::map([=](
+			ResolvedTheme resolved,
+			bool disableCustomBackgrounds,
+			bool wallpaperHidden)
 	-> rpl::producer<std::shared_ptr<Ui::ChatTheme>> {
+		const auto type = resolved.dark
+			? Data::CloudThemeType::Dark
+			: Data::CloudThemeType::Light;
+		if (wallpaperHidden) {
+			const auto plain = Data::WallPaper(0).withBackgroundColors(
+				{ st::windowBg->c });
+			return controller->cachedChatThemeValue(
+				resolved.theme.value_or(Data::CloudTheme()),
+				plain,
+				type);
+		}
 		// this check ensures that background is not a pattern wallpaper in a private chat
 		if (disableCustomBackgrounds && resolved.paper && resolved.paper->media) {
 			resolved.paper = std::nullopt;
@@ -588,9 +616,6 @@ auto ChatThemeValueFromPeer(
 		const auto paper = resolved.paper
 			? resolved.paper->paper
 			: Data::WallPaper(0);
-		const auto type = resolved.dark
-			? Data::CloudThemeType::Dark
-			: Data::CloudThemeType::Light;
 		if (paper.document()
 			&& resolved.paper->media
 			&& !resolved.paper->media->loaded()

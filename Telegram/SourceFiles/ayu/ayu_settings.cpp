@@ -1036,7 +1036,7 @@ void AyuSettings::setGraphiteMessageSize(int val) {
 }
 
 void AyuSettings::setGraphiteChatSurface(int val) {
-	val = std::clamp(val, 0, 4);
+	val = std::clamp(val, 0, 5);
 	if (_graphiteChatSurface.current() != val) {
 		_graphiteChatSurface = val;
 		save();
@@ -1044,7 +1044,7 @@ void AyuSettings::setGraphiteChatSurface(int val) {
 }
 
 void AyuSettings::setGraphiteNavSurface(int val) {
-	val = std::clamp(val, 0, 4);
+	val = std::clamp(val, 0, 5);
 	if (_graphiteNavSurface.current() != val) {
 		_graphiteNavSurface = val;
 		save();
@@ -1052,7 +1052,7 @@ void AyuSettings::setGraphiteNavSurface(int val) {
 }
 
 void AyuSettings::setGraphiteListSurface(int val) {
-	val = std::clamp(val, 0, 4);
+	val = std::clamp(val, 0, 5);
 	if (_graphiteListSurface.current() != val) {
 		_graphiteListSurface = val;
 		save();
@@ -1400,9 +1400,9 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._graphiteCompactNav = j.value("graphiteCompactNav", defaults._graphiteCompactNav.current());
 	s._graphiteForumMessages = j.value("graphiteForumMessages", defaults._graphiteForumMessages.current());
 	s._graphiteMessageSize = std::clamp(j.value("graphiteMessageSize", defaults._graphiteMessageSize.current()), 12, 20);
-	s._graphiteChatSurface = std::clamp(j.value("graphiteChatSurface", defaults._graphiteChatSurface.current()), 0, 4);
-	s._graphiteNavSurface = std::clamp(j.value("graphiteNavSurface", defaults._graphiteNavSurface.current()), 0, 4);
-	s._graphiteListSurface = std::clamp(j.value("graphiteListSurface", defaults._graphiteListSurface.current()), 0, 4);
+	s._graphiteChatSurface = std::clamp(j.value("graphiteChatSurface", defaults._graphiteChatSurface.current()), 0, 5);
+	s._graphiteNavSurface = std::clamp(j.value("graphiteNavSurface", defaults._graphiteNavSurface.current()), 0, 5);
+	s._graphiteListSurface = std::clamp(j.value("graphiteListSurface", defaults._graphiteListSurface.current()), 0, 5);
 	s._graphiteAvatarSize = std::clamp(j.value("graphiteAvatarSize", defaults._graphiteAvatarSize.current()), 32, 56);
 	s._graphiteGrainOpacity = std::clamp(j.value("graphiteGrainOpacity", defaults._graphiteGrainOpacity.current()), 0, 10);
 	s._graphiteMessageIds = j.value("graphiteMessageIds", defaults._graphiteMessageIds.current());

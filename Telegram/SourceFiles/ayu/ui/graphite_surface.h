@@ -1,6 +1,7 @@
 // Native Graphite surface decoration. All bitmaps are shared across repaints.
 #pragma once
 
+#include "ayu/ui/glass_surface.h"
 #include "ui/style/style_core_scale.h"
 #include "styles/palette.h"
 
@@ -118,6 +119,12 @@ inline void PaintGraphiteSurface(
 	clip = clip.intersected(bounds);
 	if (!surface || clip.isEmpty() || bounds.isEmpty()) {
 		return;
+	} else if (surface == kGlassSurface) {
+		PaintGlassSurface(p, clip);
+		if (!grainOpacity) {
+			return;
+		}
+		surface = 0;
 	}
 	const auto ratio = p.device() ? p.device()->devicePixelRatioF() : 1.;
 	const auto &pixmap = details::GraphiteSurfacePixmap(

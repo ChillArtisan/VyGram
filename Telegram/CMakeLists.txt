@@ -165,6 +165,12 @@ set(ayugram_files
         ayu/features/chat_privacy.cpp
         ayu/features/chat_privacy.h
         ayu/features/chat_privacy_policy.h
+        ayu/features/account_appearance/account_appearance.cpp
+        ayu/features/account_appearance/account_appearance.h
+        ayu/ui/boxes/account_switcher.cpp
+        ayu/ui/boxes/account_switcher.h
+        ayu/ui/glass_surface.cpp
+        ayu/ui/glass_surface.h
         ayu/ui/boxes/protection_status_box.cpp
         ayu/ui/boxes/protection_status_box.h
         ayu/ui/settings/ayu_builder.cpp

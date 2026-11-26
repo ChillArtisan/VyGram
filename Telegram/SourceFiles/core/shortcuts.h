@@ -101,6 +101,8 @@ enum class Command {
 	FocusComposer,
 	ToggleChatInfo,
 	ShowShortcuts,
+	AccountNext,
+	AccountPrevious,
 };
 
 [[maybe_unused]] constexpr auto kShowFolder = {

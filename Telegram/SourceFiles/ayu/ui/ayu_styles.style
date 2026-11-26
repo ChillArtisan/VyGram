@@ -138,3 +138,15 @@ vygramFileStatusFont: font("JetBrains Mono" 11px);
 
 vygramReactionRadius: 4px;
 vygramReactionCountFont: font("JetBrains Mono" 12px);
+
+vygramAccountRowHeight: 40px;
+vygramAccountRowHeightCompact: 34px;
+vygramAccountUserpic: 26px;
+vygramAccountPadding: 12px;
+vygramAccountAccentWidth: 3px;
+vygramAccountRingWidth: 2px;
+vygramAccountDividerSkip: 6px;
+vygramAccountWideRail: 120px;
+vygramAccountColorSize: 28px;
+vygramAccountColorSkip: 10px;
+vygramAccountColorPadding: margins(22px, 8px, 22px, 12px);

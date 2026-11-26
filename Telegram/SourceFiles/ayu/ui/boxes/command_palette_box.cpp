@@ -1,10 +1,12 @@
 #include "ayu/ui/boxes/command_palette_box.h"
 
 #include "ayu/data/ayu_database.h"
+#include "ayu/ui/boxes/account_switcher.h"
 #include "ayu/ui/boxes/chat_archive_box.h"
 #include "ayu/ui/boxes/chat_labels_box.h"
 #include "ayu/ui/boxes/protection_status_box.h"
 #include "base/event_filter.h"
+#include "core/application.h"
 #include "core/shortcuts.h"
 #include "settings/settings_common.h"
 #include "settings/sections/settings_shortcuts.h"
@@ -19,6 +21,7 @@
 #include "info/info_memento.h"
 #include "lang/lang_keys.h"
 #include "main/main_account.h"
+#include "main/main_domain.h"
 #include "main/main_session.h"
 #include "ui/layers/generic_box.h"
 #include "ui/widgets/buttons.h"
@@ -121,6 +124,35 @@ void Palette(
 			controller->showSettings(Settings::ShortcutsId());
 		} },
 	};
+	auto accountIndex = 0;
+	for (const auto account : Core::App().domain().orderedAccounts()) {
+		const auto index = accountIndex++;
+		if (!account->sessionExists() || account == &session->account()) {
+			continue;
+		}
+		auto shortcut = std::optional<Command>();
+		if (index < int(Shortcuts::kShowAccount.size())) {
+			shortcut = *(Shortcuts::kShowAccount.begin() + index);
+		}
+		const auto other = &account->session();
+		state->entries.push_back({
+			u"account."_q + QString::number(other->uniqueId()),
+			tr::lng_vygram_account_switch_to(
+				tr::now,
+				lt_name,
+				other->user()->name()),
+			&st::menuIconProfile,
+			shortcut,
+			[=](QString) { SwitchToAccount(controller, account); },
+		});
+	}
+	state->entries.push_back({
+		u"account_appearance"_q,
+		tr::lng_vygram_account_appearance(tr::now),
+		&st::menuIconPalette,
+		std::nullopt,
+		[=](QString) { ShowAccountAppearanceBox(controller); },
+	});
 	for (const auto row : *session->data().chatsList()->indexed()) {
 		if (const auto chat = row->key().history()) {
 			const auto peer = chat->peer;

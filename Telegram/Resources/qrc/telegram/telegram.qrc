@@ -22,6 +22,7 @@
     <file alias="graphite/navigation.jpg">../../art/graphite/navigation.jpg</file>
     <file alias="graphite/mark.png">../../art/graphite/mark.png</file>
     <file alias="cold-steel.tdesktop-theme">../../cold-steel.tdesktop-theme</file>
+    <file alias="glass.tdesktop-theme">../../glass.tdesktop-theme</file>
     <file alias="terminal.tdesktop-theme">../../terminal.tdesktop-theme</file>
     <file alias="fonts/IBMPlexSans.ttf">../../fonts/IBMPlexSans.ttf</file>
     <file alias="fonts/IBMPlexSans-OFL.txt">../../fonts/IBMPlexSans-OFL.txt</file>

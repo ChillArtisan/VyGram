@@ -123,6 +123,8 @@ const auto CommandByName = base::flat_map<QString, Command>{
 	{ u"account4"_q                      , Command::ShowAccount4 },
 	{ u"account5"_q                      , Command::ShowAccount5 },
 	{ u"account6"_q                      , Command::ShowAccount6 },
+	{ u"next_account"_q                  , Command::AccountNext },
+	{ u"previous_account"_q              , Command::AccountPrevious },
 
 	{ u"folder1"_q                       , Command::ShowFolder1 },
 	{ u"folder2"_q                       , Command::ShowFolder2 },
@@ -543,6 +545,15 @@ void Manager::fillDefaults() {
 	set(u"%1+shift+down"_q.arg(ctrl) , Command::FolderNext);
 	set(u"%1+shift+up"_q.arg(ctrl)   , Command::FolderPrevious);
 
+	auto &&accounts = ranges::views::zip(
+		kShowAccount,
+		ranges::views::ints(1, ranges::unreachable));
+	for (const auto &[command, index] : accounts) {
+		set(u"%1+alt+%2"_q.arg(ctrl).arg(index), command);
+	}
+	set(u"%1+alt+pgdown"_q.arg(ctrl)  , Command::AccountNext);
+	set(u"%1+alt+pgup"_q.arg(ctrl)    , Command::AccountPrevious);
+
 	set(u"ctrl+0"_q                  , Command::ChatSelf);
 	set(u"ctrl+n"_q                  , Command::ShowContacts);
 	set(u"ctrl+shift+m"_q            , Command::ToggleChatMute);
@@ -602,7 +613,7 @@ void Manager::writeDefaultFile() {
 	}
 
 	// Commands without a default value.
-	for (const auto c : ranges::views::concat(kShowAccount, kNoValue)) {
+	for (const auto c : kNoValue) {
 		for (const auto &[name, command] : CommandByName) {
 			if (c == command) {
 				auto entry = QJsonObject();

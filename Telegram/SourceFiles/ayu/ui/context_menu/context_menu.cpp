@@ -13,6 +13,7 @@
 #include "ayu/ayu_settings.h"
 #include "ayu/ayu_state.h"
 #include "ayu/data/messages_storage.h"
+#include "ayu/features/account_appearance/account_appearance.h"
 #include "ayu/features/filters/filters_controller.h"
 #include "ayu/features/forward/ayu_forward.h"
 #include "ayu/features/forward/ayu_forward_rich.h"
@@ -297,6 +298,22 @@ void AddAyuGramActions(PeerData *peerData,
 				tr::lng_vygram_chat_privacy_title(tr::now),
 				[=] { Ayu::ShowChatPrivacy(sessionController, peerData); },
 				&st::menuIconGroupReactions);
+			const auto wallpaperHidden
+				= Ayu::AccountAppearance::ChatWallpaperHidden(peerData);
+			addAction(
+				wallpaperHidden
+					? tr::lng_vygram_chat_wallpaper_show(tr::now)
+					: tr::lng_vygram_chat_wallpaper_hide(tr::now),
+				[=] {
+					const auto saved = Ayu::AccountAppearance::SetChatWallpaperHidden(
+						peerData,
+						!wallpaperHidden);
+					if (!saved) {
+						sessionController->showToast(
+							tr::lng_vygram_chat_privacy_storage_error(tr::now));
+					}
+				},
+				&st::menuIconPhoto);
 			addAction(
 				tr::lng_vygram_labels_edit(tr::now),
 				[=] { Ayu::ShowChatLabelEditor(sessionController, peerData); },

@@ -59,8 +59,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
+#include "ayu/features/account_appearance/account_appearance.h"
+#include "ayu/ui/boxes/account_switcher.h"
 #include "ayu/ui/graphite_surface.h"
 #include "styles/style_ayu_icons.h"
+#include "styles/style_ayu_styles.h"
 
 
 namespace Window {
@@ -347,6 +350,41 @@ void FiltersMenu::setupGraphiteNavigation() {
 	settings->setClickedCallback([=] { _session->showSettings(); });
 	settings->show();
 	_railSettings = settings;
+	_accountsStrip = Ui::CreateChild<Ayu::AccountsStrip>(
+		&_outer,
+		_session,
+		AyuSettings::getInstance().graphiteCompactNav());
+	_accountsStrip->show();
+	_accountsStrip->heightValue(
+	) | rpl::skip(1) | rpl::on_next([=] {
+		updateGeometries();
+	}, _accountsStrip->lifetime());
+}
+
+void FiltersMenu::updateGeometries() {
+	const auto height = _parent->height();
+	const auto width = railWidth();
+	_outer.setGeometry({ 0, 0, width, height });
+	_menu.resizeToWidth(width);
+	const auto bottom = _railSettings
+		? style::ConvertScale(AyuSettings::getInstance().graphiteCompactNav() ? 36 : 48)
+		: 0;
+	if (_railSettings) {
+		_railSettings->setGeometry(0, height - bottom, width, bottom);
+		_menu.setGeometry(0, height - 2 * bottom, width, bottom);
+	} else {
+		_menu.move(0, 0);
+	}
+	const auto scrollTop = _graphite ? style::ConvertScale(8) : _menu.height();
+	auto scrollBottom = _graphite ? _menu.y() : height;
+	if (_accountsStrip) {
+		_accountsStrip->resizeToWidth(width);
+		scrollBottom -= _accountsStrip->height();
+		_accountsStrip->move(0, scrollBottom);
+	}
+	_scroll.setGeometry({ 0, scrollTop, width, std::max(0, scrollBottom - scrollTop) });
+	_container->resizeToWidth(width);
+	_container->move(0, 0);
 }
 
 void FiltersMenu::setup() {
@@ -388,33 +426,32 @@ void FiltersMenu::setup() {
 			}
 			PaintRailButton(&_menu, _session->session().user()->name(),
 				st::menuIconProfile, false, _accountBadge);
+			const auto accent = Ayu::AccountAppearance::Accent(
+				_session->session().uniqueId());
+			if (accent) {
+				auto p = QPainter(&_menu);
+				p.fillRect(
+					0,
+					0,
+					st::vygramAccountAccentWidth,
+					_menu.height(),
+					*accent);
+			}
 			return base::EventFilterResult::Cancel;
 		});
+		Ayu::AccountAppearance::AccentValue(
+			_session->session().uniqueId()
+		) | rpl::skip(1) | rpl::on_next([=] {
+			_menu.update();
+		}, _outer.lifetime());
 		rpl::combine(
 			AyuSettings::getInstance().graphiteNavSurfaceValue(),
 			AyuSettings::getInstance().graphiteGrainOpacityValue()
 		) | rpl::on_next([=] { _outer.update(); }, _outer.lifetime());
 	}
 	_parent->sizeValue(
-	) | rpl::on_next([=](QSize size) {
-		const auto height = size.height();
-		const auto width = railWidth();
-		_outer.setGeometry({ 0, 0, width, height });
-		_menu.resizeToWidth(width);
-		const auto bottom = _railSettings
-			? style::ConvertScale(AyuSettings::getInstance().graphiteCompactNav() ? 36 : 48)
-			: 0;
-		if (_railSettings) {
-			_railSettings->setGeometry(0, height - bottom, width, bottom);
-			_menu.setGeometry(0, height - 2 * bottom, width, bottom);
-		} else {
-			_menu.move(0, 0);
-		}
-		const auto scrollTop = _graphite ? style::ConvertScale(8) : _menu.height();
-		const auto scrollBottom = _graphite ? _menu.y() : height;
-		_scroll.setGeometry({ 0, scrollTop, width, std::max(0, scrollBottom - scrollTop) });
-		_container->resizeToWidth(width);
-		_container->move(0, 0);
+	) | rpl::on_next([=] {
+		updateGeometries();
 	}, _outer.lifetime());
 
 	auto premium = Data::AmPremiumValue(&_session->session());
@@ -450,7 +487,11 @@ void FiltersMenu::setup() {
 	}, _outer.lifetime());
 
 	_menu.setClickedCallback([=] {
-		_session->widget()->showMainMenu();
+		if (_graphite) {
+			Ayu::ShowAccountsMenu(_session, &_outer, QCursor::pos());
+		} else {
+			_session->widget()->showMainMenu();
+		}
 	});
 
 	Core::App().settings().chatFiltersTabsModeValue(

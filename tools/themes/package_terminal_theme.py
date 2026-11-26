@@ -1,5 +1,6 @@
 """Package the native Terminal palette without building the application."""
 
+import re
 import zipfile
 from pathlib import Path
 
@@ -38,3 +39,27 @@ if __name__ == "__main__":
     }.items():
         steel = steel.replace(graphite.encode(), replacement.encode())
     package("cold-steel.tdesktop-theme", steel)
+    # Glass: night navy surfaces, gold accent, jade online, rose attention, translucent bubbles.
+    glass = palette
+    for graphite, replacement in {
+        "#141311": "#0b0e13", "#191816": "#10131a", "#201f1d": "#171b23",
+        "#292724": "#1f2430", "#302a22": "#2c2717", "#383530": "#2d3442",
+        "#e4b16e": "#e6b53d", "#a58a65": "#a8893f", "#e3c995": "#f2d27e",
+        "#bea36f": "#c9a246", "#e6e3de": "#efe8dd", "#a39f98": "#a3a7b0",
+        "#85817b": "#80858f", "#83a68b": "#3fae86", "#cf7772": "#e0707e",
+    }.items():
+        glass = glass.replace(graphite.encode(), replacement.encode())
+    for key, value in {
+        "msgInBg": "#171b23c4",
+        "msgOutBg": "#2b2618cc",
+        "msgInBgSelected": "#26324ad4",
+        "msgOutBgSelected": "#3d3520dc",
+        "msgServiceBg": "#0b0e13a0",
+        "msgDateImgBg": "#0b0e1380",
+        "historyScrollBg": "#0b0e1340",
+    }.items():
+        pattern = re.compile(rb"^(" + key.encode() + rb":\s*)[^;]+;", re.M)
+        glass, count = pattern.subn(rb"\g<1>" + value.encode() + b";", glass)
+        if count != 1:
+            raise SystemExit("palette key not found: " + key)
+    package("glass.tdesktop-theme", glass)

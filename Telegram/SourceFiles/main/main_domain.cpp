@@ -26,6 +26,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_controller.h"
 #include "data/data_peer_values.h" // Data::AmPremiumValue.
 
+// AyuGram includes
+#include "ayu/features/account_appearance/account_appearance.h"
+
+
 namespace Main {
 
 Domain::Domain(const QString &dataName)
@@ -476,6 +480,7 @@ void Domain::activate(not_null<Main::Account*> account) {
 		wasAuthed = _active.current()->sessionExists();
 	}
 	_accountToActivate = i->index;
+	Ayu::AccountAppearance::Activating(account);
 	_active = account.get();
 	_active.current()->sessionValue(
 	) | rpl::start_to_stream(_activeSessions, _activeLifetime);

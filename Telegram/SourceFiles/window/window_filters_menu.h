@@ -28,6 +28,10 @@ template <typename Widget>
 class SlideWrap;
 } // namespace Ui
 
+namespace Ayu {
+class AccountsStrip;
+} // namespace Ayu
+
 namespace Window {
 
 class SessionController;
@@ -68,6 +72,7 @@ private:
 		bool toBeginning = false);
 	void setupMainMenuIcon();
 	void setupGraphiteNavigation();
+	void updateGeometries();
 	void showMenu(QPoint position, FilterId id);
 	void scrollToButton(not_null<Ui::RpWidget*> widget);
 	void applyFilterAt(int start, int delta);
@@ -84,6 +89,7 @@ private:
 	std::unique_ptr<style::SideBarButton> _graphiteFolderStyle;
 	Ui::RpWidget _outer;
 	Ui::RpWidget *_railSettings = nullptr;
+	Ayu::AccountsStrip *_accountsStrip = nullptr;
 	QString _accountBadge;
 	Ui::SideBarButton _menu;
 	Ui::ScrollArea _scroll;

@@ -98,6 +98,8 @@ struct Labeled {
 		{ C::ShowAccount4, account(4) },
 		{ C::ShowAccount5, account(5) },
 		{ C::ShowAccount6, account(6) },
+		{ C::AccountNext, tr::lng_vygram_account_next() },
+		{ C::AccountPrevious, tr::lng_vygram_account_previous() },
 		separator,
 		{ C::ShowAllChats, tr::lng_shortcuts_show_all_chats() },
 		{ C::ShowFolder1, folder(1) },

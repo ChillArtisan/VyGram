@@ -132,6 +132,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
+#include "ayu/ui/boxes/account_switcher.h"
 
 
 namespace Window {
@@ -2025,6 +2026,12 @@ void SessionController::setupShortcuts() {
 				return true;
 			});
 		}
+		request->check(C::AccountNext) && request->handle([=] {
+			return Ayu::SwitchAccountRelative(this, 1);
+		});
+		request->check(C::AccountPrevious) && request->handle([=] {
+			return Ayu::SwitchAccountRelative(this, -1);
+		});
 
 		if (!session().supportMode()) {
 			return;
