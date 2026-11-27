@@ -25,6 +25,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <openssl/crypto.h>
 #include <stdexcept>
 #include <cstring>
+#include <optional>
 #include <QFileInfo>
 
 namespace Storage {
@@ -50,14 +51,27 @@ using namespace details;
 	return std::make_shared<MTP::AuthKey>(key);
 }
 
-[[nodiscard]] bool UnlockArchive(const MTP::AuthKeyPtr &key) {
+[[nodiscard]] MTP::AuthKeyPtr GenerateArchiveKey() {
+	auto data = MTP::AuthKey::Data{};
+	const auto wipe = gsl::finally([&] {
+		OPENSSL_cleanse(data.data(), data.size());
+	});
+	base::RandomFill(data.data(), data.size());
+	return std::make_shared<MTP::AuthKey>(data);
+}
+
+[[nodiscard]] QByteArray KeyBytes(const MTP::AuthKeyPtr &key) {
 	const auto data = key->data();
-	auto copy = QByteArray(reinterpret_cast<const char*>(data.data()), data.size());
+	return QByteArray(reinterpret_cast<const char*>(data.data()), data.size());
+}
+
+[[nodiscard]] bool UnlockArchive(const MTP::AuthKeyPtr &key, bool allowCreate) {
+	auto copy = KeyBytes(key);
 	const auto wipe = gsl::finally([&] {
 		OPENSSL_cleanse(copy.data(), copy.size());
 	});
 	try {
-		if (!AyuDatabase::unlock(copy)) {
+		if (!AyuDatabase::unlock(copy, allowCreate)) {
 			return false;
 		}
 		if (!Local::loadProtectedSettings() || !AyuSettings::loadProtected()) {
@@ -162,6 +176,7 @@ StartResult Domain::start(const QByteArray &passcode) {
 		_owner->finish();
 		AyuDatabase::shutdown();
 		_localKey = nullptr;
+		_archiveKey = nullptr;
 		_passcodeKey = nullptr;
 		_passcodeKeySalt.clear();
 		_passcodeKeyEncrypted.clear();
@@ -191,7 +206,7 @@ void Domain::startWithSingleAccount(
 	const auto legacyKey = account->local().peekLegacyLocalKey();
 	if (legacyKey) {
 		_localKey = legacyKey;
-		encryptLocalKey(passcode);
+		applyWrapper(wrapLocalKey(passcode, nullptr));
 	} else {
 		generateLocalKey();
 	}
@@ -207,12 +222,9 @@ void Domain::startWithSingleAccount(
 		_requiresPasscodeUpgrade = true;
 		return;
 	}
-	if (!WriteProfileWrapper(ComputeKeyName(_dataName), _passcodeKeySalt,
-			_passcodeKeyEncrypted, _pendingAccountInfo, true)) {
-		throw std::runtime_error("Could not persist the profile key.");
-	}
-	if (_hasLocalPasscode && !_requiresPasscodeUpgrade && !UnlockArchive(_localKey)) {
-		throw std::runtime_error("Could not unlock the local archive.");
+	if (protectWithPasscode(passcode, _pendingAccountInfo)
+			!= ProtectResult::Done) {
+		throw std::runtime_error("Could not protect the local archive.");
 	}
 	if (legacyKey) {
 		account->start(nullptr);
@@ -241,11 +253,18 @@ void Domain::generateLocalKey() {
 	});
 	_localKey = CreateLocalKey(pass, salt);
 
-	encryptLocalKey(QByteArray());
+	applyWrapper(wrapLocalKey(QByteArray(), nullptr));
 }
 
-void Domain::encryptLocalKey(const QByteArray &passcode) {
+Domain::KeyWrapper Domain::wrapLocalKey(
+		const QByteArray &passcode,
+		MTP::AuthKeyPtr archiveKey) const {
 	using namespace Ayu::Security;
+	Expects(_localKey != nullptr);
+	// Without a passcode the wrapper key is public: never put the archive
+	// key there.
+	Expects(!archiveKey || !passcode.isEmpty());
+
 	auto salt = QByteArray(passcode.isEmpty()
 		? LocalEncryptSaltSize : kProfileSaltSize, Qt::Uninitialized);
 	base::RandomFill(salt.data(), salt.size());
@@ -253,20 +272,107 @@ void Domain::encryptLocalKey(const QByteArray &passcode) {
 		std::memcpy(salt.data(), kProfileSaltMarker, kProfileSaltMarkerSize);
 	}
 	auto key = ProfilePasscodeKey(passcode, salt);
-	EncryptedDescriptor passKeyData(MTP::AuthKey::kSize);
+	EncryptedDescriptor passKeyData(
+		MTP::AuthKey::kSize * (archiveKey ? 2 : 1));
 	const auto wipe = gsl::finally([&] {
 		OPENSSL_cleanse(passKeyData.data.data(), passKeyData.data.size());
 	});
 	_localKey->write(passKeyData.stream);
+	if (archiveKey) {
+		archiveKey->write(passKeyData.stream);
+	}
 	auto encrypted = PrepareEncrypted(passKeyData, key);
 	const auto hasPasscode = !passcode.isEmpty();
-	const auto requiresUpgrade = hasPasscode && !IsStrongLocalPassword(
-		QString::fromUtf8(passcode).toStdU32String());
-	_passcodeKeySalt = std::move(salt);
-	_passcodeKey = std::move(key);
-	_passcodeKeyEncrypted = std::move(encrypted);
-	_hasLocalPasscode = hasPasscode;
-	_requiresPasscodeUpgrade = requiresUpgrade;
+	return KeyWrapper{
+		.salt = std::move(salt),
+		.encrypted = std::move(encrypted),
+		.passcodeKey = std::move(key),
+		.archiveKey = std::move(archiveKey),
+		.hasPasscode = hasPasscode,
+		.requiresUpgrade = hasPasscode && !IsStrongLocalPassword(
+			QString::fromUtf8(passcode).toStdU32String()),
+	};
+}
+
+Domain::KeyWrapper Domain::currentWrapper() const {
+	return KeyWrapper{
+		.salt = _passcodeKeySalt,
+		.encrypted = _passcodeKeyEncrypted,
+		.passcodeKey = _passcodeKey,
+		.archiveKey = _archiveKey,
+		.hasPasscode = _hasLocalPasscode,
+		.requiresUpgrade = _requiresPasscodeUpgrade,
+	};
+}
+
+void Domain::applyWrapper(KeyWrapper &&wrapper) {
+	_passcodeKeySalt = std::move(wrapper.salt);
+	_passcodeKeyEncrypted = std::move(wrapper.encrypted);
+	_passcodeKey = std::move(wrapper.passcodeKey);
+	_archiveKey = std::move(wrapper.archiveKey);
+	_hasLocalPasscode = wrapper.hasPasscode;
+	_requiresPasscodeUpgrade = wrapper.requiresUpgrade;
+}
+
+bool Domain::unlockArchive(bool allowCreate) {
+	// Invariant: an archive is only ever created under a fresh archive key
+	// that a strong passcode protects on disk.
+	if (allowCreate
+		&& (!_hasLocalPasscode || _requiresPasscodeUpgrade || !_archiveKey)) {
+		return false;
+	}
+	return UnlockArchive(_archiveKey ? _archiveKey : _localKey, allowCreate);
+}
+
+// Protects the profile with `passcode` and a freshly generated archive key,
+// moving an existing archive to that key. Every passcode change therefore
+// also rotates the archive key: an older wrapper of this profile (a leaked
+// backup, a weaker passcode or KDF, no passcode at all) reveals _localKey
+// at most, never the key of the current archive.
+Domain::ProtectResult Domain::protectWithPasscode(
+		const QByteArray &passcode,
+		const QByteArray &accountsInfo) {
+	Expects(!passcode.isEmpty());
+
+	auto next = wrapLocalKey(passcode, GenerateArchiveKey());
+	if (next.requiresUpgrade) {
+		return ProtectResult::Failed;
+	}
+	const auto name = ComputeKeyName(_dataName);
+	const auto previous = currentWrapper();
+	auto persisted = false;
+	const auto persist = [&] {
+		persisted = WriteProfileWrapper(
+			name, next.salt, next.encrypted, accountsInfo, true);
+		return persisted;
+	};
+	const auto rollback = [&] {
+		return WriteProfileWrapper(
+			name, previous.salt, previous.encrypted, accountsInfo, true);
+	};
+	if (AyuDatabase::isUnlocked() || AyuDatabase::hasArchive()) {
+		if (!AyuDatabase::isUnlocked() && !unlockArchive(false)) {
+			return ProtectResult::Failed;
+		}
+		auto archiveKey = KeyBytes(next.archiveKey);
+		const auto wipe = gsl::finally([&] {
+			OPENSSL_cleanse(archiveKey.data(), archiveKey.size());
+		});
+		const auto result = AyuDatabase::rekey(archiveKey, persist, rollback);
+		if (result == AyuDatabase::RekeyResult::Unchanged) {
+			return ProtectResult::Failed;
+		} else if (persisted) {
+			applyWrapper(std::move(next));
+		}
+		return (result == AyuDatabase::RekeyResult::Rekeyed)
+			? ProtectResult::Done
+			: ProtectResult::Locked;
+	}
+	if (!persist()) {
+		return rollback() ? ProtectResult::Failed : ProtectResult::Locked;
+	}
+	applyWrapper(std::move(next));
+	return unlockArchive(true) ? ProtectResult::Done : ProtectResult::Locked;
 }
 
 Domain::StartModernResult Domain::startModern(
@@ -280,7 +386,8 @@ Domain::StartModernResult Domain::startModern(
 			|| QFileInfo::exists(base + name + u'0')
 			|| QFileInfo::exists(base + name + u'1')
 			|| QFileInfo::exists(base + u"ayudata.secure.db"_q)
-			|| QFileInfo::exists(base + u"ayudata.secure.db.migrating"_q)) {
+			|| QFileInfo::exists(base + u"ayudata.secure.db.migrating"_q)
+			|| QFileInfo::exists(base + u"ayudata.secure.db.rekey"_q)) {
 			return StartModernResult::StorageError;
 		}
 		return StartModernResult::Empty;
@@ -308,16 +415,30 @@ Domain::StartModernResult Domain::startModern(
 		return StartModernResult::IncorrectPasscode;
 	}
 	auto key = Serialize::read<MTP::AuthKey::Data>(keyInnerData.stream);
+	auto archiveKey = std::optional<MTP::AuthKey::Data>();
 	const auto wipe = gsl::finally([&] {
 		OPENSSL_cleanse(key.data(), key.size());
+		if (archiveKey) {
+			OPENSSL_cleanse(archiveKey->data(), archiveKey->size());
+		}
 		OPENSSL_cleanse(keyInnerData.data.data(), keyInnerData.data.size());
 	});
+	if (keyInnerData.stream.status() == QDataStream::Ok
+		&& !keyInnerData.stream.atEnd()
+		&& Ayu::Security::IsScryptProfileSalt(
+			reinterpret_cast<const unsigned char*>(salt.constData()),
+			salt.size())) {
+		archiveKey = Serialize::read<MTP::AuthKey::Data>(keyInnerData.stream);
+	}
 	if (keyInnerData.stream.status() != QDataStream::Ok
 		|| !keyInnerData.stream.atEnd()) {
 		LOG(("App Error: could not read pass-protected key from info file"));
 		return StartModernResult::Failed;
 	}
 	_localKey = std::make_shared<MTP::AuthKey>(key);
+	_archiveKey = archiveKey
+		? std::make_shared<MTP::AuthKey>(*archiveKey)
+		: nullptr;
 
 	_passcodeKeyEncrypted = keyEncrypted;
 	_passcodeKeySalt = salt;
@@ -344,14 +465,18 @@ Domain::StartModernResult Domain::startModern(
 		return StartModernResult::NeedsPasscodeSetup;
 	}
 	if (_hasLocalPasscode && !_requiresPasscodeUpgrade) {
-		if (salt.size() == LocalEncryptSaltSize) {
-			encryptLocalKey(passcode);
-		}
-		if (!WriteProfileWrapper(name, _passcodeKeySalt,
-				_passcodeKeyEncrypted, infoEncrypted, true)) {
-			return StartModernResult::StorageError;
-		}
-		if (!UnlockArchive(_localKey)) {
+		// A wrapper without an archive key predates it, so the archive
+		// (if any) is still under _localKey, which older wrappers (PBKDF2
+		// or a weaker passcode) could reveal. protectWithPasscode() moves
+		// it to a fresh key and, for PBKDF2 wrappers, to scrypt as well.
+		if (_archiveKey) {
+			if (!WriteProfileWrapper(name, _passcodeKeySalt,
+					_passcodeKeyEncrypted, infoEncrypted, true)
+				|| !unlockArchive(true)) {
+				return StartModernResult::StorageError;
+			}
+		} else if (protectWithPasscode(passcode, infoEncrypted)
+				!= ProtectResult::Done) {
 			return StartModernResult::StorageError;
 		}
 	}
@@ -449,11 +574,12 @@ bool Domain::setPasscode(const QByteArray &passcode) {
 				QString::fromUtf8(passcode).toStdU32String())) {
 			return false;
 		}
-		encryptLocalKey(passcode);
-		if (!WriteProfileWrapper(ComputeKeyName(_dataName), _passcodeKeySalt,
-				_passcodeKeyEncrypted, _pendingAccountInfo.isEmpty()
-					? prepareAccountsInfo() : _pendingAccountInfo, true)
-			|| !UnlockArchive(_localKey)) {
+		const auto result = protectWithPasscode(
+			passcode,
+			_pendingAccountInfo.isEmpty()
+				? prepareAccountsInfo()
+				: _pendingAccountInfo);
+		if (result != ProtectResult::Done) {
 			_requiresPasscodeUpgrade = true;
 			return false;
 		}

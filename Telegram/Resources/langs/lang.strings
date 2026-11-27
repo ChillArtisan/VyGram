@@ -9231,7 +9231,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_terminal_password_new" = "New local password";
 "lng_terminal_password_confirm" = "Confirm local password";
 "lng_terminal_password_create" = "Create password";
-"lng_terminal_password_weak" = "Use at least 12 characters; avoid repeated patterns and common sequences.";
+"lng_terminal_password_weak" = "This password is too easy to guess. Use at least 12 characters and avoid common words, names, dates and keyboard patterns. Several unrelated words or a password manager work best.";
 "lng_terminal_password_required" = "The local archive password cannot be disabled.";
 "lng_terminal_archive_error" = "The local archive could not be opened. Check that its files are available and try again.";
 "lng_ayu_archive_media_unavailable" = "Media unavailable: the file was not saved to the archive.";

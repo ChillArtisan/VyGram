@@ -61,18 +61,44 @@ private:
 		NeedsPasscodeSetup,
 	};
 
+	enum class ProtectResult {
+		Done,
+		Failed, // Nothing changed on disk.
+		Locked, // The passcode may be persisted, the archive is shut.
+	};
+	struct KeyWrapper {
+		QByteArray salt;
+		QByteArray encrypted;
+		MTP::AuthKeyPtr passcodeKey;
+		MTP::AuthKeyPtr archiveKey;
+		bool hasPasscode = false;
+		bool requiresUpgrade = false;
+	};
+
 	[[nodiscard]] StartModernResult startModern(const QByteArray &passcode);
 	void startWithSingleAccount(
 		const QByteArray &passcode,
 		std::unique_ptr<Main::Account> account);
 	void generateLocalKey();
-	void encryptLocalKey(const QByteArray &passcode);
+	[[nodiscard]] KeyWrapper wrapLocalKey(
+		const QByteArray &passcode,
+		MTP::AuthKeyPtr archiveKey) const;
+	[[nodiscard]] KeyWrapper currentWrapper() const;
+	void applyWrapper(KeyWrapper &&wrapper);
+	[[nodiscard]] ProtectResult protectWithPasscode(
+		const QByteArray &passcode,
+		const QByteArray &accountsInfo);
+	[[nodiscard]] bool unlockArchive(bool allowCreate);
 	[[nodiscard]] QByteArray prepareAccountsInfo() const;
 
 	const not_null<Main::Domain*> _owner;
 	const QString _dataName;
 
 	MTP::AuthKeyPtr _localKey;
+	// Independent random key of the local archive, stored only inside the
+	// scrypt-protected wrapper. Null for wrappers written before it existed,
+	// whose archive (if any) is still encrypted with _localKey.
+	MTP::AuthKeyPtr _archiveKey;
 	MTP::AuthKeyPtr _passcodeKey;
 	QByteArray _passcodeKeySalt;
 	QByteArray _passcodeKeyEncrypted;

@@ -22,9 +22,31 @@ public:
 namespace AyuDatabase {
 
 void initialize();
-[[nodiscard]] bool unlock(const QByteArray &profileKey);
+
+// Whether encrypted archive data exists on disk (complete or mid-rotation).
+[[nodiscard]] bool hasArchive();
+
+// Opens the archive with `archiveKey`. Without `allowCreate` it fails
+// instead of creating the archive or migrating the plaintext legacy one:
+// pass it only once a strong passcode protects `archiveKey` on disk.
+[[nodiscard]] bool unlock(const QByteArray &archiveKey, bool allowCreate);
 [[nodiscard]] bool isUnlocked();
 void shutdown();
+
+enum class RekeyResult {
+	Rekeyed,   // The archive is open under the new key.
+	Unchanged, // Nothing was persisted; the archive stays under the old key.
+	Locked,    // The outcome is settled on the next unlock; archive is shut.
+};
+
+// Re-encrypts the unlocked archive under `newKey`. `persist` must durably
+// store `newKey` (it runs after a verified copy exists and before that copy
+// replaces the archive). If it fails, `rollback` must durably restore the
+// previous key and return whether it did.
+[[nodiscard]] RekeyResult rekey(
+	const QByteArray &newKey,
+	const std::function<bool()> &persist,
+	const std::function<bool()> &rollback);
 
 [[nodiscard]] bool storePrivateSetting(const std::string &name, const QByteArray &value);
 [[nodiscard]] QByteArray loadPrivateSetting(const std::string &name);

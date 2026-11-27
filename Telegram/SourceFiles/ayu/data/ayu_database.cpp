@@ -12,7 +12,6 @@
 
 #include <openssl/crypto.h>
 #include <QDir>
-#include <QFile>
 
 #include <mutex>
 #include <set>
@@ -281,6 +280,22 @@ struct ArchiveState {
 
 ArchiveState archive;
 
+std::string archivePath() {
+	return (cWorkingDir() + u"tdata/"_q).toStdString()
+		+ Ayu::Security::kArchiveName;
+}
+
+// Expects databaseMutex to be held and archive.key to be set.
+void openArchive() {
+	archive.database = std::make_unique<ArchiveStorage>(
+		makeStorage(archivePath()));
+	archive.database->on_open = [](sqlite3 *db) {
+		Ayu::Security::Configure(db, archive.key.constData(), archive.key.size());
+		Ayu::Security::Verify(db);
+	};
+	archive.database->open_forever();
+}
+
 ArchiveStorage &openedStorage() {
 	if (!archive.unlocked || !archive.database) {
 		throw std::runtime_error("Secure archive is locked.");
@@ -394,15 +409,27 @@ void initialize() {
 	};
 }
 
-bool unlock(const QByteArray &profileKey) {
+bool hasArchive() {
+	std::lock_guard lock(databaseMutex);
+	try {
+		const auto path = archivePath();
+		return Ayu::Security::FileExists(path)
+			|| Ayu::Security::FileExists(path + Ayu::Security::kRekeySuffix);
+	} catch (...) {
+		// Unknown state: treat it as present so nothing gets created over it.
+		return true;
+	}
+}
+
+bool unlock(const QByteArray &archiveKey, bool allowCreate) {
 	std::lock_guard lock(databaseMutex);
 	if (archive.unlocked) {
-		return archive.key == profileKey;
+		return archive.key == archiveKey;
 	}
-	if (profileKey.size() != 256) {
+	if (archiveKey.size() != Ayu::Security::kArchiveKeySize) {
 		return false;
 	}
-	archive.key = QByteArray(profileKey.constData(), profileKey.size());
+	archive.key = QByteArray(archiveKey.constData(), archiveKey.size());
 	try {
 		const auto directory = cWorkingDir() + u"tdata/"_q;
 		if (!QDir().mkpath(directory)) {
@@ -415,39 +442,14 @@ bool unlock(const QByteArray &profileKey) {
 			LOG(("Legacy archive backups require explicit encrypted recovery."));
 			throw std::runtime_error("Legacy archive backups require recovery.");
 		}
-		const auto path = directory + u"ayudata.secure.db"_q;
-		const auto legacy = directory + u"ayudata.db"_q;
-		if (QFile::exists(legacy)) {
-			if (QFile::exists(path)) {
-				throw std::runtime_error("Legacy archive requires recovery.");
-			}
-			const auto staging = path + u".migrating"_q;
-			if (QFile::exists(staging)) {
-				throw std::runtime_error("Archive migration requires recovery.");
-			}
-			Ayu::Security::ExportLegacy(legacy.toStdString(), staging.toStdString(),
-				archive.key.constData(), archive.key.size());
-			if (!QFile::rename(staging, path) || !QFile::remove(legacy)) {
-				throw std::runtime_error("Could not finalize archive migration.");
-			}
-			for (const auto &suffix : { u"-wal"_q, u"-shm"_q, u"-journal"_q }) {
-				const auto sidecar = legacy + suffix;
-				if (QFile::exists(sidecar) && !QFile::remove(sidecar)) {
-					throw std::runtime_error("Could not remove legacy archive sidecar.");
-				}
-			}
+		if (!Ayu::Security::PrepareArchive(
+				directory.toStdString(),
+				archive.key.constData(),
+				allowCreate)) {
+			archive.clear();
+			return false;
 		}
-		for (const auto &suffix : { u"-wal"_q, u"-shm"_q, u"-journal"_q }) {
-			if (QFile::exists(legacy + suffix)) {
-				throw std::runtime_error("Legacy archive sidecar requires recovery.");
-			}
-		}
-		archive.database = std::make_unique<ArchiveStorage>(makeStorage(path.toStdString()));
-		archive.database->on_open = [](sqlite3 *db) {
-			Ayu::Security::Configure(db, archive.key.constData(), archive.key.size());
-			Ayu::Security::Verify(db);
-		};
-		archive.database->open_forever();
+		openArchive();
 		archive.database->sync_schema(true);
 		runMigrations(*archive.database);
 		archive.database->sync_schema(true);
@@ -457,6 +459,56 @@ bool unlock(const QByteArray &profileKey) {
 		archive.clear();
 		LOG(("Encrypted archive could not be opened; existing data was preserved."));
 		return false;
+	}
+}
+
+RekeyResult rekey(
+		const QByteArray &newKey,
+		const std::function<bool()> &persist,
+		const std::function<bool()> &rollback) {
+	// Held throughout, so no write lands in the old file after the copy.
+	std::lock_guard lock(databaseMutex);
+	if (!archive.unlocked
+		|| newKey.size() != Ayu::Security::kArchiveKeySize
+		|| newKey == archive.key) {
+		return RekeyResult::Unchanged;
+	}
+	const auto path = archivePath();
+	try {
+		Ayu::Security::StageRekey(
+			path,
+			archive.key.constData(),
+			newKey.constData());
+	} catch (...) {
+		LOG(("Archive key rotation could not stage a copy."));
+		return RekeyResult::Unchanged;
+	}
+	if (!persist()) {
+		if (rollback && rollback()) {
+			try {
+				Ayu::Security::DiscardRekey(path);
+				return RekeyResult::Unchanged;
+			} catch (...) {
+			}
+		}
+		// Which key is on disk is unknown: stop writing to the old file
+		// and let the next unlock settle it.
+		archive.clear();
+		LOG(("Archive key rotation could not persist the new key."));
+		return RekeyResult::Locked;
+	}
+	try {
+		archive.database.reset();
+		Ayu::Security::PromoteRekey(path);
+		auto previous = QByteArray(newKey.constData(), newKey.size());
+		std::swap(archive.key, previous);
+		OPENSSL_cleanse(previous.data(), previous.size());
+		openArchive();
+		return RekeyResult::Rekeyed;
+	} catch (...) {
+		archive.clear();
+		LOG(("Archive key rotation completes on the next unlock."));
+		return RekeyResult::Locked;
 	}
 }
 
