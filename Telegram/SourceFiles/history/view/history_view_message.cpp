@@ -1909,6 +1909,18 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 		if (selectionTranslation) {
 			p.translate(-selectionTranslation, 0);
 		}
+		if (ForumRecord(this)) {
+			const auto top = isAttachedToPrevious()
+				? 0
+				: (marginTop() - style::ConvertScale(14));
+			const auto left = st::historyPhotoLeft - style::ConvertScale(6);
+			const auto right = width() - st::msgMargin.right();
+			auto backdrop = st::windowBg->c;
+			backdrop.setAlphaF(0.72);
+			if (right > left && height() > top) {
+				p.fillRect(left, top, right - left, height() - top, backdrop);
+			}
+		}
 		if (customHighlight) {
 			media->drawHighlight(p, context, localMediaTop);
 		} else {
@@ -1976,8 +1988,7 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 	const auto forum = ForumRecord(this);
 	if (forum && !isAttachedToPrevious()) {
 		const auto left = hasFromPhoto() ? ForumPhotoLeft(this) : st::msgMargin.left();
-		const auto right = std::min(width() - st::msgMargin.left(),
-			left + style::ConvertScale(840));
+		const auto right = width() - st::msgMargin.right();
 		if (right > left) {
 			p.fillRect(left, g.top() - style::ConvertScale(5), right - left,
 				st::lineWidth, st::menuSeparatorFg);

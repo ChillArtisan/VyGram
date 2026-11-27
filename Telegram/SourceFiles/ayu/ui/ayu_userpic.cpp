@@ -192,6 +192,17 @@ void PaintShape(QPainter &p, const QRectF &rect) {
 	}
 }
 
+void PaintShape(
+		QPainter &p,
+		const QRectF &rect,
+		not_null<const PeerData*> peer) {
+	if (const auto kind = TerminalShapeKind(peer)) {
+		p.drawPath(TerminalShapePath(kind, rect));
+	} else {
+		PaintShape(p, rect);
+	}
+}
+
 QPointF OnlineBadgePosition(int photoSize, double badgeSize, double stroke) {
 	const auto corners = AyuUiSettings::getAvatarCorners();
 	const auto r = double(corners) / AyuUiSettings::kMaxAvatarCorners * photoSize / 2.0;

@@ -740,7 +740,13 @@ void UserpicButton::paintUserpicFrame(Painter &p, QPoint photoPosition) {
 		const auto ratio = style::DevicePixelRatio();
 		request.outer = request.resize = size * ratio;
 		const auto ayuOverride = AyuUserpic::ShouldOverrideShape(_shape);
-		if (ayuOverride) {
+		const auto terminalKind = (_peer
+				&& (_shape == PeerUserpicShape::Auto
+					|| _shape == _peer->userpicShape()))
+			? AyuUserpic::TerminalShapeKind(_peer)
+			: 0;
+		if (terminalKind) {
+		} else if (ayuOverride) {
 			AyuUserpic::ApplyFrameRounding(
 				request,
 				_roundingCorners,
@@ -761,6 +767,11 @@ void UserpicButton::paintUserpicFrame(Painter &p, QPoint photoPosition) {
 			request.mask = _ellipseMask;
 		}
 		auto frame = _streamed->frame(request);
+		if (terminalKind) {
+			frame = AyuUserpic::ApplyTerminalShape(
+				std::move(frame),
+				terminalKind);
+		}
 
 		if (_shape == PeerUserpicShape::Monoforum) {
 			if (_monoforumMask.isNull()) {

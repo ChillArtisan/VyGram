@@ -437,7 +437,8 @@ void PeerData::paintUserpic(
 	const auto size = context.size;
 	const auto cloud = userpicCloudImage(view);
 	const auto ratio = style::DevicePixelRatio();
-	const auto terminalKind = (context.shape == Ui::PeerUserpicShape::Auto)
+	const auto terminalKind = (context.shape == Ui::PeerUserpicShape::Auto
+			|| context.shape == userpicShape())
 		? AyuUserpic::TerminalShapeKind(this)
 		: 0;
 	if (context.shape == Ui::PeerUserpicShape::Auto) {

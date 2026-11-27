@@ -458,7 +458,7 @@ void AccountsStrip::paintEvent(QPaintEvent *e) {
 			p.setPen(pen);
 			p.setBrush(Qt::NoBrush);
 			AyuUserpic::PaintShape(p, QRectF(x, y, size, size).marginsAdded(
-				{ ring / 2., ring / 2., ring / 2., ring / 2. }));
+				{ ring / 2., ring / 2., ring / 2., ring / 2. }), user);
 		}
 		const auto unread = hideCounters
 			? 0

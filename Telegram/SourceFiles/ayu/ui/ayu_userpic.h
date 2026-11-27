@@ -27,6 +27,10 @@ namespace AyuUserpic {
 
 void PaintShape(QPainter &p, int x, int y, int size);
 void PaintShape(QPainter &p, const QRectF &rect);
+void PaintShape(
+	QPainter &p,
+	const QRectF &rect,
+	not_null<const PeerData*> peer);
 
 [[nodiscard]] QPointF OnlineBadgePosition(int photoSize, double badgeSize, double stroke = 0);
 [[nodiscard]] QRect OnlineBadgeRect(
